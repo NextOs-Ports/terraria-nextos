@@ -1,172 +1,221 @@
-# Terraria — universal Android Unity loader for NextOS / R36S
+# Terraria — loader universal da versão Android para NextOS / R36S
 
-## Visão geral (PT-BR)
+[Português (Brasil)](README.md) · [English](README.en.md)
+
+![Terraria em gameplay real a 640x480](docs/images/terraria-gameplay.png)
 
 Este projeto executa **Terraria Android 1.4.5.6.4**, Unity 2021.3.56f2
-IL2CPP, em aparelhos Linux AArch64 por meio de um loader de compatibilidade
-nativo. É o loader da versão Android: **não é o port FNA** e não contém o jogo.
+IL2CPP, em portáteis Linux AArch64 por meio de um loader de compatibilidade
+nativo. É o loader da versão Android: **não é o port FNA**, não é streaming e
+não inclui o jogo.
 
-O ZIP público é BYO-data. Na primeira execução, NXExtract 1.2.0 localiza o APK
-legal fornecido pelo usuário, confere conteúdo, ABI, tamanhos e hashes, aplica a
-configuração GLES2 de forma transacional e só então libera o loader.
+O pacote público é BYO-data: cada pessoa fornece seu próprio APK legal. Na
+primeira execução, o NXExtract 1.2.0 identifica a versão exata, valida ABI,
+tamanhos e hashes, extrai somente os arquivos necessários e aplica a
+configuração GLES2 de forma transacional.
 
-## Overview (EN)
+## Download
 
-This project runs **Terraria Android 1.4.5.6.4**, Unity 2021.3.56f2 IL2CPP,
-on AArch64 Linux handhelds through a native compatibility loader. It is the
-Android loader, **not the FNA port**, and it does not include the game.
+- [Release v1.0.1](https://github.com/NextOs-Ports/terraria-nextos/releases/tag/v1.0.1)
+- [Baixar `terraria.zip`](https://github.com/NextOs-Ports/terraria-nextos/releases/download/v1.0.1/terraria.zip)
+- SHA-256: `0b10e79759529e3421ba341ecd4531a8ce9b36659a6d86d8af232ec933d95167`
 
-The public ZIP is BYO-data. On first launch, NXExtract 1.2.0 finds the owner's
-legal APK, verifies content, ABI, sizes and hashes, applies the GLES2 setup in a
-transaction, and only then allows the loader to start.
+## Galeria — capturas reais no aparelho
 
-## Compatibility architecture
-
-- One AArch64 executable for the public package; maximum requirement
-  `GLIBC_2.27` (release gate: no newer than `GLIBC_2.30`).
-- The loader uses the firmware's stable SDL2 ABI; SDL3 is neither required nor
-  bundled.
-- The launcher never forces `SDL_VIDEODRIVER` or `SDL_AUDIODRIVER`.
-- SDL's actual initialized video driver decides ownership:
-  `mali`/fbdev-class backends retain the vendor EGL path; KMSDRM, Wayland and
-  other successful SDL backends use SDL-owned GLES contexts and presentation.
-- GLES2 is the default. Window size comes from the launcher override when
-  present, then the SDL desktop mode, with a safe 640×480 fallback.
-- Both presentation paths run the same Terraria hooks for native controller
-  input, on-screen name entry, render fixes and frame lifecycle.
-- `SELECT+START` requests focus loss and `nativePause` immediately. A three
-  second process watchdog guarantees return to the frontend if a vendor driver
-  stalls during the final frame.
-- A foreground process model is used. No `setsid`, `nohup`, frontend service
-  manipulation or background double-launch is part of the package.
-
-## Problems solved
-
-- Removed the former hard-coded `/storage/roms/terraria` layout from native
-  asset, library, save, storage-space and diagnostic paths.
-- Replaced device-name/`/dev/dri/card0` guesses with actual SDL capability
-  detection and a single clean fallback attempt.
-- Kept the Android lifecycle order: `initJni`, graphics recreation, resume,
-  focus, render loop, focus loss and pause.
-- Shared the before-present input/fix path between raw Mali/fbdev and SDL-owned
-  presentation; the older SDL/KMS path skipped part of it.
-- Preserved the validated InControl Xbox path, FMOD-to-SDL audio, player/world
-  creation and persistent saves from the original working loader.
-- Added a Terraria-themed QWERTY controller keyboard. Horizontal navigation is
-  row-aware, and `DONE` publishes the text on the managed game thread before
-  Terraria's original close/create flow consumes it.
-- Compiled release diagnostics out of the public ELF and made verbose frame
-  logs opt-in.
-
-## Validated compatibility
-
-| Profile | Result |
+| Teclado temático controlado pelo gamepad | Nome confirmado pelo fluxo original |
 |---|---|
-| R36S-class ArkOS, AArch64, KMSDRM/Mali-G31, 640x480 | Boot, audio, controller, keyboard navigation, player naming, original player creation, persistent save and gameplay validated |
-| NextOS Mali-450/fbdev family | Preserves the already-working vendor EGL path; public binary and packaged UI pass the low-glibc gate |
+| ![Teclado QWERTY do Terraria](docs/images/terraria-keyboard.png) | ![Nome Codex aplicado na criação](docs/images/terraria-name-confirmed.png) |
 
-The package deliberately avoids device-name checks. Other firmware and display
-combinations use the same capability-based paths, but still require physical
-testing; compatibility is not inferred from a successful build alone.
+| Jogador criado e salvo | Geração de mundo |
+|---|---|
+| ![Tela de seleção com jogador criado](docs/images/terraria-player-created.png) | ![Geração de mundo chegando à limpeza final](docs/images/terraria-world-generation.png) |
 
-## Controls
+| Mundo salvo e selecionável | Gameplay |
+|---|---|
+| ![Tela de seleção de mundo](docs/images/terraria-world-select.png) | ![Terraria rodando no aparelho](docs/images/terraria-gameplay.png) |
 
-Terraria receives an Xbox-style controller through its native InControl flow,
-so menu, inventory, gameplay bindings and glyphs remain game-owned. The
-on-screen name keyboard uses the D-pad to navigate, A or R3 to activate the
-selected key, B to delete, X to change case, Start to activate `DONE`, and
-Select to cancel. `SPACE`, `SHIFT`, `DEL` and `DONE` are also selectable keys.
-Press `SELECT+START` together to exit, including while the keyboard is open.
+Todas as imagens acima são capturas 640x480 da validação física. Nenhuma é
+mockup.
 
-Exact gameplay bindings can be changed in Terraria's own controller settings.
+## Estado da compatibilidade
 
-## Native keyboard flow
+| Item | Estado |
+|---|---|
+| Arquitetura | Linux AArch64 / ARM64 |
+| Jogo suportado | Android `1.4.5.6.4`, pacote `com.and.games505.TerrariaPaid` |
+| Motor | Unity `2021.3.56f2`, IL2CPP |
+| Renderização | GLES2; SDL/KMSDRM ou EGL do fornecedor conforme o backend realmente inicializado |
+| Loader público | um único ELF AArch64, requisito máximo `GLIBC_2.27` |
+| Interface do NXExtract | requisito máximo `GLIBC_2.17` |
+| Entrada | controle Xbox/InControl nativo + teclado de nomes controlado pelo gamepad |
+| Dados | APK e conteúdo do jogo fornecidos pelo proprietário; nunca incluídos |
 
-The overlay replaces only Android's unavailable software keyboard. It does not
-jump to creation methods: Terraria still executes `EnterName`, opens its name
-editor, receives the committed text through the next managed `Draw`, runs
-`CloseNameEdit`, and later invokes its original Create button path. The same
-rule is used for player and world names, keeping validation and save creation
-inside the game's native order.
+Validação física concluída em um R36S-class com ArkOS, Mali-G31/KMSDRM e tela
+640x480: boot, áudio, controle, teclado, nome do jogador, criação original,
+save persistente, geração de mundo, gameplay e saída para o frontend.
 
-## Owner-supplied data
+A família NextOS Mali-450/fbdev mantém o caminho EGL do fornecedor já usado
+pelo loader, e todos os ELFs Linux empacotados passam pelo gate de baixa
+glibc. Outros firmwares e combinações de vídeo usam a mesma seleção por
+capacidade, mas ainda precisam de teste físico; o projeto não promete
+compatibilidade apenas porque compilou.
 
-Supported source:
+## Instalação rápida
 
-- Android package: `com.and.games505.TerrariaPaid`
-- Game version: `1.4.5.6.4`
-- Unity: `2021.3.56f2`, IL2CPP
-- ABI: `arm64-v8a`
+1. Extraia `terraria.zip` na pasta de ports. O resultado deve deixar
+   `Terraria.sh` ao lado da pasta `terraria/`.
+2. Coloque seu APK Android legal do Terraria **1.4.5.6.4** em
+   `terraria/gamedata/`. O nome do arquivo não importa.
+3. Abra `Terraria` no frontend. O NXExtract valida e prepara os dados na
+   primeira execução.
+4. Pressione `SELECT+START` juntos para sair imediatamente.
 
-Place the legal APK in `terraria/gamedata/` and launch `Terraria.sh`. The APK
-filename does not matter. The recipe rejects another release even if its name
-looks correct. See [INSTALLATION.md](INSTALLATION.md).
+O firmware precisa fornecer Python 3, SDL2, EGL e GLES2. Instruções de
+instalação, atualização, espaço livre e diagnóstico estão em
+[INSTALLATION.md](INSTALLATION.md).
 
-The APK, `libunity.so`, `libil2cpp.so`, `libc++_shared.so`, Unity data, saves
-and generated runtime logs are excluded from Git and from the public ZIP.
+Estrutura esperada depois de extrair o ZIP:
 
-## NXExtract provenance
+```text
+ports/
+├── Terraria.sh
+└── terraria/
+    ├── terraria
+    ├── run.sh
+    ├── extractor.json
+    ├── nxextract.py
+    └── gamedata/
+        └── seu-apk-legal-1.4.5.6.4.apk
+```
 
-The standalone source tree vendors NXExtract `1.2.0` from the canonical
-multi-device framework at commit `400f87fb2aa4807d817403e23eb6965e3dd308e9`.
-Release audits pin these runtime hashes:
+## Controles
+
+Terraria recebe um controle no padrão Xbox pelo fluxo InControl nativo. Menu,
+inventário, gameplay, ícones e remapeamento continuam pertencendo ao jogo.
+
+No teclado de nomes:
+
+| Ação | Botão |
+|---|---|
+| Navegar | D-pad |
+| Ativar tecla | `A` ou `R3` |
+| Apagar | `B` |
+| Alternar maiúsculas/minúsculas | `X` |
+| Confirmar em `DONE` | `START` |
+| Cancelar | `SELECT` |
+| Sair do jogo | `SELECT+START` juntos |
+
+`SPACE`, `SHIFT`, `DEL` e `DONE` também podem ser escolhidos diretamente. O
+atalho de saída funciona inclusive enquanto o teclado está aberto.
+
+## Como o loader evita dependência de um único aparelho
+
+- Não há caminho absoluto fixo para `/storage/roms/terraria`.
+- Não há decisão por nome de dispositivo nem suposição de `/dev/dri/card0`.
+- O launcher não força `SDL_VIDEODRIVER` nem `SDL_AUDIODRIVER`.
+- O backend que o SDL realmente inicializa decide quem controla o contexto:
+  `mali`/fbdev usa EGL do fornecedor; KMSDRM, Wayland e outros backends SDL
+  válidos usam contexto e apresentação pertencentes ao SDL.
+- A resolução vem do override do launcher, depois do modo desktop do SDL, com
+  fallback seguro de 640x480.
+- SDL2 é usado pela ABI estável do firmware; SDL3 não é exigido nem incluído.
+- Apresentação, controles, correções e ciclo de frames compartilham o mesmo
+  caminho antes do swap, em vez de existirem correções exclusivas por device.
+- O processo permanece em primeiro plano e o pacote não usa `setsid`, `nohup`
+  nem manipulação do serviço do frontend.
+
+## Fluxo nativo preservado
+
+O loader respeita a sequência Android/Unity do jogo: inicialização JNI,
+recriação gráfica, resume, foco, loop de renderização, perda de foco e pause.
+Ele intercepta compatibilidade; não chama etapas do jogo fora de ordem.
+
+O teclado substitui somente o teclado virtual Android ausente. Terraria ainda
+executa `EnterName`, abre o editor, recebe o texto no próximo `Draw` da thread
+gerenciada, chama `CloseNameEdit` e depois segue pelo botão Create original.
+Isso vale para nomes de jogador e de mundo, preservando validação e saves.
+
+Ao pressionar `SELECT+START`, o combo é consumido antes de chegar ao menu de
+pausa, o loader envia perda de foco e `nativePause`, e um watchdog de três
+segundos garante o retorno caso um driver trave no último frame.
+
+## Dados fornecidos pelo proprietário
+
+Fonte aceita:
+
+- pacote Android: `com.and.games505.TerrariaPaid`;
+- versão do jogo: `1.4.5.6.4`;
+- Unity: `2021.3.56f2`, IL2CPP;
+- ABI: `arm64-v8a`.
+
+A receita rejeita outra versão mesmo que o arquivo seja renomeado. O APK,
+`libunity.so`, `libil2cpp.so`, `libc++_shared.so`, dados Unity, saves e logs de
+execução não entram no Git nem no ZIP público.
+
+## NXExtract 1.2.0
+
+O código completo e fixado do NXExtract está em `third_party/NXExtract/`,
+originado do framework multi-device no commit
+`400f87fb2aa4807d817403e23eb6965e3dd308e9`. A execução ocorre em ambiente de
+bibliotecas isolado para impedir que bibliotecas Android extraídas contaminem
+o Python ou a interface de instalação.
+
+Hashes fixados do runtime:
 
 - `nxextract.py`: `55664066d2ff0e5b7b83b6285d6606cca74923e80183d2f2e176e6353b93abd5`
 - `nxextract-runtime-env.sh`: `332919a9960d4317563b647f9932d1a4367da147a425fe2f78eafd706f01563f`
 - `run-extractor.sh`: `3c61f638a25f0ca9c5c5a94d33660886aaff17a18347c9e954afd4b0e9b3efba`
 - `nxextract-ui`: `046afb583f5a211c946495e639409f81d9cfec706788eeccb7924b0e8e5a50b6`
 
-NXExtract runs in an isolated firmware-library environment so extracted
-Android libraries cannot contaminate Python or the setup UI process.
+## Build e pacote
 
-## Build and package
-
-Requirements on the build host: Docker, a current NextOS Amlogic-old sysroot
-for SDL/EGL/GLES headers, Bash, `readelf`, Python 3 and ZIP tools.
+O host de build precisa de Docker, Bash, Python 3, `readelf`, ferramentas ZIP
+e o sysroot NextOS Amlogic-old atual para os headers SDL/EGL/GLES.
 
 ```sh
 ./build_universal.sh
 ./package/build-package.sh
 ```
 
-`build_universal.sh` compiles in Debian Buster and verifies the glibc ceiling
-and the bionic TLS guard layout. `package/build-package.sh` then audits every
-ELF in the staged release, checks scripts/metadata/recipe, rejects proprietary
-or diagnostic content, and creates a deterministic ZIP plus SHA-256 file.
+O primeiro script compila em Debian Buster e verifica o teto de glibc e o
+layout do guard TLS bionic. O segundo audita todos os ELFs do estágio, scripts,
+metadados e receita; rejeita conteúdo proprietário ou diagnóstico e produz um
+ZIP determinístico com SHA-256.
 
-For a source-tree run after installing owner data with NXExtract:
+Depois de instalar os dados próprios com o NXExtract, o source tree pode ser
+executado com:
 
 ```sh
 ./Terraria.sh
 ```
 
-## Source map
+## Mapa do código
 
-- `src/`: ELF loader, bionic/JNI/pthread/OpenSL/EGL compatibility and Terraria
-  controller/runtime hooks.
-- `run.sh`: firmware-neutral foreground runtime.
-- `package/r36s/Terraria.sh`: PortMaster entry point and BYO-data gate.
-- `package/universal/extractor.json`: content-addressed extraction recipe.
-- `tools/prepare_terraria_data.py`: exact data validation and boot.config patch.
-- `third_party/NXExtract/`: complete pinned NXExtract 1.2.0 source/runtime.
-- `package/build-package.sh`: deterministic release and compatibility audit.
+- `src/`: loader ELF, compatibilidade bionic/JNI/pthread/OpenSL/EGL e hooks do
+  Terraria.
+- `run.sh`: runtime em primeiro plano e neutro de firmware.
+- `package/r36s/Terraria.sh`: entrada PortMaster e gate BYO-data.
+- `package/universal/extractor.json`: receita de extração por conteúdo.
+- `tools/prepare_terraria_data.py`: validação e patch controlado de
+  `boot.config`.
+- `third_party/NXExtract/`: fonte/runtime completo do NXExtract 1.2.0.
+- `package/build-package.sh`: empacotamento determinístico e auditoria.
 
-## Working references
+## Referências funcionais
 
-- [Horizon Chase NextOS](https://github.com/NextOs-Ports/horizonchase-nextos)
-  provided the already-validated multi-firmware SDL/EGL ownership and bionic
-  signal-set strategy.
-- [Prizefighters 2 NextOS](https://github.com/NextOs-Ports/prizefighters2-nextos)
-  provided the already-validated pthread bridge and controller-keyboard design;
-  the Terraria overlay uses its own palette and Terraria-specific managed-name
-  integration.
+- [Horizon Chase NextOS](https://github.com/NextOs-Ports/horizonchase-nextos):
+  estratégia já validada de propriedade SDL/EGL multi-firmware e sinais
+  bionic.
+- [Prizefighters 2 NextOS](https://github.com/NextOs-Ports/prizefighters2-nextos):
+  bridge pthread e desenho de teclado pelo controle já validados. O Terraria
+  usa paleta própria e integração específica com seu editor de nomes.
 
-## Licenses and independence
+## Licenças e independência
 
-The loader source is distributed under GNU GPL v3. Upstream compatibility
-components retain their notices in [NOTICE.md](NOTICE.md) and `licenses/`.
-NXExtract is MIT licensed.
+O código do loader é distribuído sob GNU GPL v3. Componentes de compatibilidade
+mantêm seus avisos em [NOTICE.md](NOTICE.md) e em `licenses/`. NXExtract usa a
+licença MIT.
 
-Terraria and all game content are proprietary works of their respective
-rightsholders. This independent interoperability project is not affiliated
-with or endorsed by Re-Logic, 505 Games or Unity Technologies.
+Terraria e todo o conteúdo do jogo são obras proprietárias de seus respectivos
+detentores. Este projeto independente de interoperabilidade não é afiliado nem
+endossado pela Re-Logic, 505 Games ou Unity Technologies.
