@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.2
+
+- Connected Terraria's four-byte no-op `Game.Exit` method to the loader's
+  guarded teardown, after the game's original settings-save and social
+  shutdown steps have run.
+- Honored the engine-owned `false` return from `nativeRender` as a second
+  native Unity exit path instead of calling one more frame.
+- Kept the already-validated immediate `SELECT+START` exit path unchanged.
+- Added self-contained bilingual package documentation that does not depend on
+  repository-only images or a release ZIP's own hash.
+
 ## 1.0.1
 
 - Made `SELECT+START` exit immediately instead of requiring a 750 ms hold.

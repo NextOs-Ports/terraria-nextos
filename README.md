@@ -16,9 +16,9 @@ configuração GLES2 de forma transacional.
 
 ## Download
 
-- [Release v1.0.1](https://github.com/NextOs-Ports/terraria-nextos/releases/tag/v1.0.1)
-- [Baixar `terraria.zip`](https://github.com/NextOs-Ports/terraria-nextos/releases/download/v1.0.1/terraria.zip)
-- SHA-256: `0b10e79759529e3421ba341ecd4531a8ce9b36659a6d86d8af232ec933d95167`
+- [Release v1.0.2](https://github.com/NextOs-Ports/terraria-nextos/releases/tag/v1.0.2)
+- [Baixar `terraria.zip`](https://github.com/NextOs-Ports/terraria-nextos/releases/download/v1.0.2/terraria.zip)
+- SHA-256: `ff21f803f0fbee4ee30bc17ac1a93746abfab1027e04ff6b00d43c2738d6294e`
 
 ## Galeria — capturas reais no aparelho
 
@@ -68,7 +68,8 @@ compatibilidade apenas porque compilou.
    `terraria/gamedata/`. O nome do arquivo não importa.
 3. Abra `Terraria` no frontend. O NXExtract valida e prepara os dados na
    primeira execução.
-4. Pressione `SELECT+START` juntos para sair imediatamente.
+4. Para sair, use `Quit Game` dentro do Terraria ou pressione
+   `SELECT+START` juntos para sair imediatamente.
 
 O firmware precisa fornecer Python 3, SDL2, EGL e GLES2. Instruções de
 instalação, atualização, espaço livre e diagnóstico estão em
@@ -103,10 +104,11 @@ No teclado de nomes:
 | Alternar maiúsculas/minúsculas | `X` |
 | Confirmar em `DONE` | `START` |
 | Cancelar | `SELECT` |
-| Sair do jogo | `SELECT+START` juntos |
+| Sair imediatamente | `SELECT+START` juntos |
 
 `SPACE`, `SHIFT`, `DEL` e `DONE` também podem ser escolhidos diretamente. O
-atalho de saída funciona inclusive enquanto o teclado está aberto.
+atalho de saída funciona inclusive enquanto o teclado está aberto. O botão
+`Quit Game` do próprio Terraria também encerra o loader e retorna ao frontend.
 
 ## Como o loader evita dependência de um único aparelho
 
@@ -135,9 +137,12 @@ executa `EnterName`, abre o editor, recebe o texto no próximo `Draw` da thread
 gerenciada, chama `CloseNameEdit` e depois segue pelo botão Create original.
 Isso vale para nomes de jogador e de mundo, preservando validação e saves.
 
-Ao pressionar `SELECT+START`, o combo é consumido antes de chegar ao menu de
-pausa, o loader envia perda de foco e `nativePause`, e um watchdog de três
-segundos garante o retorno caso um driver trave no último frame.
+O `Quit Game` preserva o fluxo original de `SaveSettings` e desligamento social,
+mas conecta o `Game.Exit` vazio da versão Android ao teardown do loader. O
+retorno `false` de `nativeRender` também é respeitado. Ao pressionar
+`SELECT+START`, o combo é consumido antes de chegar ao menu de pausa. Todos os
+caminhos convergem na perda de foco, em `nativePause` e no watchdog de três
+segundos que garante o retorno caso um driver trave no último frame.
 
 ## Dados fornecidos pelo proprietário
 
