@@ -98,5 +98,5 @@ export TER_STREAMFALLBACK=1
 
 printf '[runtime] backend=%s audio=%s game=%s\n' \
   "${SDL_VIDEODRIVER:-auto}" "${SDL_AUDIODRIVER:-auto}" "$GAMEDIR"
-printf '[runtime] SELECT+START (750 ms) exits through pause/focus-loss\n'
+printf '[runtime] SELECT+START exits through pause/focus-loss (3 s watchdog)\n'
 exec "$GAMEDIR/terraria"

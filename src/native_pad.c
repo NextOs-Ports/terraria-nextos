@@ -78,6 +78,7 @@ enum { NPB_A, NPB_B, NPB_X, NPB_Y, NPB_LB, NPB_RB, NPB_BACK, NPB_START,
 enum { NPA_LX, NPA_LY, NPA_RX, NPA_RY, NPA_LT, NPA_RT, NPA_COUNT };
 static unsigned char g_npb[NPB_COUNT];
 static float g_npa[NPA_COUNT];
+static int g_np_exit_requested;
 
 static SDL_GameController *g_np_gc;   /* pad SDL aberto (lido direto pelo exit-hotkey) */
 
@@ -179,8 +180,14 @@ static void np_poll_virtual(void) {
                                           "l3","r3","up","down","left","right"};
       static const char *an[NPA_COUNT] = {"lx+","ly+","rx+","ry+","lt","rt"};
       int hit = 0;
-      for (int i = 0; i < NPB_COUNT; i++) if (!strcasecmp(tok, bn[i])) { vb[i] = dur; hit = 1; }
-      for (int i = 0; i < NPA_COUNT; i++) if (!strcasecmp(tok, an[i])) { va[i] = dur; hit = 1; }
+      if (!strcasecmp(tok, "exit")) {
+        vb[NPB_BACK] = dur;
+        vb[NPB_START] = dur;
+        hit = 1;
+      } else {
+        for (int i = 0; i < NPB_COUNT; i++) if (!strcasecmp(tok, bn[i])) { vb[i] = dur; hit = 1; }
+        for (int i = 0; i < NPA_COUNT; i++) if (!strcasecmp(tok, an[i])) { va[i] = dur; hit = 1; }
+      }
       fprintf(stderr, "[NATPAD] virt \"%s\" hit=%d x%d\n", tok, hit, dur); fsync(2);
     }
   }
@@ -225,32 +232,40 @@ static void np_cal_step(void) {
                               np_cal_kind ? "analog" : "button", np_cal_idx); fsync(2); }
 }
 
-/* SELECT+START held for ~0.75s requests the normal Android pause/focus-loss
- * lifecycle. This function is also called by raw input readers, so elapsed time
- * (not invocation count) is used to keep the hotkey stable on every device. */
+/* SELECT+START requests the normal Android pause/focus-loss lifecycle
+ * immediately.  PortMaster mappings normally expose Select as BACK, but some
+ * firmwares expose the same physical key as GUIDE; accept either.  The GO-Super
+ * raw b12+b13 fallback is deliberately device-scoped and avoids guessing raw
+ * ordinals on unrelated controllers. */
 void np_check_exit_hotkey(void) {
-  static Uint32 held_since;
-  static int requested;
   if (getenv("TER_NPEXIT") && !atoi(getenv("TER_NPEXIT"))) return;
-  int pressed = g_np_gc &&
-                SDL_GameControllerGetButton(g_np_gc, SDL_CONTROLLER_BUTTON_BACK) &&
-                SDL_GameControllerGetButton(g_np_gc, SDL_CONTROLLER_BUTTON_START);
-  if (!pressed) {
-    held_since = 0;
-    requested = 0;
-    return;
+  int pressed = g_npb[NPB_BACK] && g_npb[NPB_START];
+  if (g_np_gc) {
+    int start = SDL_GameControllerGetButton(
+        g_np_gc, SDL_CONTROLLER_BUTTON_START);
+    int select = SDL_GameControllerGetButton(
+        g_np_gc, SDL_CONTROLLER_BUTTON_BACK) ||
+        SDL_GameControllerGetButton(g_np_gc, SDL_CONTROLLER_BUTTON_GUIDE);
+    pressed |= start && select;
+
+    SDL_Joystick *joystick = SDL_GameControllerGetJoystick(g_np_gc);
+    const char *name = SDL_GameControllerName(g_np_gc);
+    if (joystick && name && !strcmp(name, "GO-Super Gamepad") &&
+        SDL_JoystickNumButtons(joystick) > 13)
+      pressed |= SDL_JoystickGetButton(joystick, 12) &&
+                 SDL_JoystickGetButton(joystick, 13);
   }
-  Uint32 now = SDL_GetTicks();
-  if (!held_since) held_since = now ? now : 1;
-  Uint32 hold_ms = 750;
-  const char *configured = getenv("TER_NPEXIT_MS");
-  if (configured && atoi(configured) >= 250) hold_ms = (Uint32)atoi(configured);
-  if (!requested && (Uint32)(now - held_since) >= hold_ms) {
-    requested = 1;
+  if (pressed && !g_np_exit_requested) {
+    g_np_exit_requested = 1;
     fprintf(stderr, "[NATPAD] SELECT+START -> encerramento solicitado\n");
     fsync(2);
     ter_request_quit();
   }
+  /* The old 750 ms gate leaked START into Terraria and opened Pause before
+   * the chord matured. Once exit is requested, consume every controller
+   * button so neither the game nor the on-screen keyboard acts on it. */
+  if (g_np_exit_requested)
+    memset(g_npb, 0, sizeof g_npb);
 }
 
 /* estado p/ consumidores externos (vkbd do main.c): botão segurado + edge deste frame */
@@ -266,6 +281,7 @@ static unsigned long np_jn_calls, np_rb_calls, np_ra_calls;
 static int np_ReadRawButtonState(void *self, int index, void *mi) {
   (void)self; (void)mi; np_rb_calls++;
   np_check_exit_hotkey();
+  if (g_np_exit_requested) return 0;
   if (index >= 0 && index < 20) np_qbtn[index]++;
   if (ter_vkbd_blocking()) return 0;   /* digitando no teclado: jogo não vê botões */
   if (np_cal_idx >= 0) return (!np_cal_kind && index == np_cal_idx) ? 1 : 0;
@@ -274,6 +290,7 @@ static int np_ReadRawButtonState(void *self, int index, void *mi) {
 }
 static float np_ReadRawAnalogValue(void *self, int index, void *mi) {
   (void)self; (void)mi; np_ra_calls++;
+  if (g_np_exit_requested) return 0.0f;
   if (index >= 0 && index < 20) np_qax[index]++;
   if (ter_vkbd_blocking()) return 0.0f;
   if (np_cal_idx >= 0) return (np_cal_kind && index == np_cal_idx) ? 1.0f : 0.0f;

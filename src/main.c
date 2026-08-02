@@ -76,9 +76,20 @@ static void dbg_sync(void) { fsync(2); }
 /* Hotkey, SDL_QUIT and Unix termination signals all converge here. The render
  * loop owns the Android lifecycle shutdown; signal handlers only set a flag. */
 static volatile sig_atomic_t g_ter_quit_requested;
-void ter_request_quit(void) { g_ter_quit_requested = 1; }
-static void ter_term_handler(int sig) { (void)sig; g_ter_quit_requested = 1; }
 static void ter_shutdown_timeout(int sig) { (void)sig; _exit(124); }
+void ter_request_quit(void) {
+  if (g_ter_quit_requested) return;
+  g_ter_quit_requested = 1;
+  /* nativeRender normally returns immediately and reaches focus-loss/pause.
+   * If a vendor driver or managed callback wedges during that final frame,
+   * SIGALRM still guarantees the frontend gets the process back. */
+  alarm(3);
+}
+static void ter_term_handler(int sig) {
+  (void)sig;
+  g_ter_quit_requested = 1;
+  alarm(3);
+}
 static void ter_install_term_handlers(void) {
   struct sigaction st;
   memset(&st, 0, sizeof(st));
@@ -86,6 +97,8 @@ static void ter_install_term_handlers(void) {
   sigemptyset(&st.sa_mask);
   sigaction(SIGINT, &st, NULL);
   sigaction(SIGTERM, &st, NULL);
+  st.sa_handler = ter_shutdown_timeout;
+  sigaction(SIGALRM, &st, NULL);
 }
 
 /* Legacy diagnostics still use these helpers directly. Guest sem/pthread

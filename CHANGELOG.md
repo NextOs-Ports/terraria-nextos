@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1
+
+- Made `SELECT+START` exit immediately instead of requiring a 750 ms hold.
+- Accepted firmware mappings that expose Select as either Back or Guide, with
+  a device-scoped raw fallback for the GO-Super controller.
+- Added a three-second process watchdog while preserving Terraria's native
+  focus-loss and pause callbacks on the normal exit path.
+
 ## 1.0.0
 
 - Rebuilt the Android Unity/IL2CPP loader as one public AArch64 binary requiring

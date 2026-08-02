@@ -34,8 +34,9 @@ transaction, and only then allows the loader to start.
   present, then the SDL desktop mode, with a safe 640×480 fallback.
 - Both presentation paths run the same Terraria hooks for native controller
   input, on-screen name entry, render fixes and frame lifecycle.
-- `SELECT+START` held for 750 ms requests focus loss and `nativePause`; it does
-  not kill the process from the input callback.
+- `SELECT+START` requests focus loss and `nativePause` immediately. A three
+  second process watchdog guarantees return to the frontend if a vendor driver
+  stalls during the final frame.
 - A foreground process model is used. No `setsid`, `nohup`, frontend service
   manipulation or background double-launch is part of the package.
 
@@ -75,7 +76,7 @@ so menu, inventory, gameplay bindings and glyphs remain game-owned. The
 on-screen name keyboard uses the D-pad to navigate, A or R3 to activate the
 selected key, B to delete, X to change case, Start to activate `DONE`, and
 Select to cancel. `SPACE`, `SHIFT`, `DEL` and `DONE` are also selectable keys.
-Hold `SELECT+START` for 750 ms outside the keyboard to exit.
+Press `SELECT+START` together to exit, including while the keyboard is open.
 
 Exact gameplay bindings can be changed in Terraria's own controller settings.
 
