@@ -20,6 +20,20 @@ configuração GLES2 de forma transacional.
 - [Baixar `terraria.zip`](https://github.com/NextOs-Ports/terraria-nextos/releases/download/v1.0.2/terraria.zip)
 - SHA-256: `ff21f803f0fbee4ee30bc17ac1a93746abfab1027e04ff6b00d43c2738d6294e`
 
+## Apoie este trabalho
+
+Fazer esses ports custa tempo e dinheiro de verdade. Se curte o resultado:
+
+- 💗 **GitHub Sponsors**: [github.com/sponsors/NextOs-Ports](https://github.com/sponsors/NextOs-Ports)
+- ☕ **Ko-fi** (PayPal/cartão): [ko-fi.com/nextos](https://ko-fi.com/nextos)
+- 🇧🇷 **PIX**: [livepix.gg/nextos](https://livepix.gg/nextos)
+
+## Comunidade
+
+Dúvidas, relatos de bug, ajuda pra colocar o port pra rodar e novidades dos próximos:
+
+💬 **Discord:** [discord.gg/DHfY62eDNN](https://discord.gg/DHfY62eDNN)
+
 ## Galeria — capturas reais no aparelho
 
 | Teclado temático controlado pelo gamepad | Nome confirmado pelo fluxo original |
