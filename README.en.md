@@ -20,6 +20,20 @@ configuration transactionally.
 - [Download `terraria.zip`](https://github.com/NextOs-Ports/terraria-nextos/releases/download/v1.0.2/terraria.zip)
 - SHA-256: `ff21f803f0fbee4ee30bc17ac1a93746abfab1027e04ff6b00d43c2738d6294e`
 
+## Support this work
+
+These ports take real time and real money to build. If you enjoy them:
+
+- 💗 **GitHub Sponsors**: [github.com/sponsors/NextOs-Ports](https://github.com/sponsors/NextOs-Ports)
+- ☕ **Ko-fi** (PayPal/card): [ko-fi.com/nextos](https://ko-fi.com/nextos)
+- 🇧🇷 **PIX**: [livepix.gg/nextos](https://livepix.gg/nextos)
+
+## Community
+
+Questions, bug reports, help getting the port running, and news about the next ones:
+
+💬 **Discord:** [discord.gg/DHfY62eDNN](https://discord.gg/DHfY62eDNN)
+
 ## Gallery — real on-device captures
 
 | Gamepad-driven themed keyboard | Name committed through the original flow |
