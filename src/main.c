@@ -171,6 +171,143 @@ static void patch_pthread_shim(void) {
 /* ---------- crash handler (arm64) ---------- */
 static uintptr_t g_unity_base, g_il2cpp_base, g_unity_data;
 static uintptr_t g_i2heap_base, g_i2heap_size;
+
+/* Terraria 1.4.5.6.4's Microsoft.Xna.Framework.Game.Exit is a four-byte
+ * IL2CPP stub containing only `ret` (RVA 0xE0EEA0).  QuitGame deliberately
+ * calls it after SaveSettings and SocialAPI.Shutdown, but Android normally
+ * relies on its Java Activity to turn that no-op into process teardown.
+ *
+ * A regular hook_arm64 would overwrite 16 bytes and corrupt the next IL2CPP
+ * method, which starts at RVA +4.  Instead, replace only the stub's `ret` with
+ * an AArch64 B to a tiny branch island in the unused tail of the loader's
+ * reserved libil2cpp mapping.  B/BR preserve x30, so the C hook returns to the
+ * original QuitGame caller after requesting our guarded teardown. */
+#define TER_GAME_EXIT_RVA 0xE0EEA0UL
+#define TER_QUIT_GAME_TAIL_RVA 0xFBC664UL
+#define TER_AARCH64_RET 0xD65F03C0u
+#define TER_GAME_WINDOW_FIRST 0xF81E0FF4u
+
+static void ter_game_exit_hook(void *game, void *method) {
+  (void)game;
+  (void)method;
+  /* Arm the watchdog before touching the log: slow or wedged removable
+   * storage must not be able to turn Quit Game back into a hang. */
+  ter_request_quit();
+  fprintf(stderr, "[QUIT] Game.Exit solicitou encerramento\n");
+}
+
+static int ter_install_game_exit_hook(void) {
+  long page_size = sysconf(_SC_PAGESIZE);
+  if (page_size <= 0 || (page_size & (page_size - 1)) != 0)
+    page_size = 4096;
+
+  uintptr_t target = g_il2cpp_base + TER_GAME_EXIT_RVA;
+  uintptr_t quit_tail = g_il2cpp_base + TER_QUIT_GAME_TAIL_RVA;
+  uintptr_t island = (g_i2heap_base + g_i2heap_size - (uintptr_t)page_size) &
+                     ~((uintptr_t)page_size - 1);
+  uintptr_t loaded_end = (uintptr_t)data_base + data_size;
+  uintptr_t text_end = (uintptr_t)text_base + text_size;
+  if (text_end > loaded_end)
+    loaded_end = text_end;
+  loaded_end = (loaded_end + (uintptr_t)page_size - 1) &
+               ~((uintptr_t)page_size - 1);
+
+  if (!g_il2cpp_base || g_i2heap_base == (uintptr_t)MAP_FAILED ||
+      g_il2cpp_base != g_i2heap_base ||
+      g_i2heap_size != 96UL * 1024 * 1024) {
+    fprintf(stderr, "[QUIT] layout do libil2cpp inesperado\n");
+    return 0;
+  }
+  uint32_t exit_opcode = *(const uint32_t *)target;
+  uint32_t next_opcode = *(const uint32_t *)(target + 4);
+  if (exit_opcode != TER_AARCH64_RET ||
+      next_opcode != TER_GAME_WINDOW_FIRST) {
+    fprintf(stderr,
+            "[QUIT] Game.Exit inesperado em libil2cpp+0x%lx "
+            "(opcode=%08x proximo=%08x)\n",
+            (unsigned long)TER_GAME_EXIT_RVA, exit_opcode, next_opcode);
+    return 0;
+  }
+  static const uint32_t expected_quit_tail[] = {
+      0xF9400268u, /* ldr x8, [x19] */
+      0xAA1303E0u, /* mov x0, x19 */
+      0xA9417BF3u, /* restore x19/x30 */
+      0xA95D8502u, /* load virtual Exit target and MethodInfo */
+      0xA8C253F5u, /* restore x21/x20 and stack */
+      0xD61F0040u, /* br x2 -- tail-dispatch Game.Exit */
+  };
+  if (memcmp((const void *)quit_tail, expected_quit_tail,
+             sizeof(expected_quit_tail)) != 0) {
+    fprintf(stderr,
+            "[QUIT] assinatura de Terraria.Main.QuitGame inesperada\n");
+    return 0;
+  }
+  if (island < loaded_end + (uintptr_t)page_size) {
+    fprintf(stderr,
+            "[QUIT] sem pagina livre para a ponte (fim=%p ilha=%p)\n",
+            (void *)loaded_end, (void *)island);
+    return 0;
+  }
+
+  int64_t delta = (int64_t)island - (int64_t)target;
+  if ((delta & 3) != 0 || delta < -0x08000000LL ||
+      delta > 0x07FFFFFCLL) {
+    fprintf(stderr, "[QUIT] ponte fora do alcance AArch64 (delta=0x%llx)\n",
+            (unsigned long long)delta);
+    return 0;
+  }
+
+  /* The tail belongs to the anonymous reservation and is untouched by the
+   * ELF.  Refuse to reuse it if that invariant ever changes. */
+  const uint64_t *empty = (const uint64_t *)island;
+  for (size_t index = 0;
+       index < (size_t)page_size / sizeof(*empty); index++) {
+    if (empty[index] != 0) {
+      fprintf(stderr, "[QUIT] pagina da ponte ja esta ocupada\n");
+      return 0;
+    }
+  }
+  if (mprotect((void *)island, (size_t)page_size,
+               PROT_READ | PROT_WRITE) != 0) {
+    fprintf(stderr, "[QUIT] mprotect RW da ponte falhou: %s\n",
+            strerror(errno));
+    return 0;
+  }
+
+  uint32_t *code = (uint32_t *)island;
+  code[0] = 0x58000051u; /* ldr x17, [pc, #8] */
+  code[1] = 0xD61F0220u; /* br x17 */
+  *(uint64_t *)(code + 2) = (uint64_t)(uintptr_t)ter_game_exit_hook;
+  __builtin___clear_cache((char *)island,
+                          (char *)island + (size_t)page_size);
+  if (mprotect((void *)island, (size_t)page_size,
+               PROT_READ | PROT_EXEC) != 0) {
+    fprintf(stderr, "[QUIT] mprotect da ponte falhou: %s\n", strerror(errno));
+    return 0;
+  }
+
+  uintptr_t target_page = target & ~((uintptr_t)page_size - 1);
+  if (mprotect((void *)target_page, (size_t)page_size,
+               PROT_READ | PROT_WRITE) != 0) {
+    fprintf(stderr, "[QUIT] mprotect RW do alvo falhou: %s\n",
+            strerror(errno));
+    return 0;
+  }
+  int64_t words = delta / 4;
+  *(uint32_t *)target =
+      0x14000000u | ((uint32_t)words & 0x03FFFFFFu); /* b island */
+  __builtin___clear_cache((char *)target, (char *)target + sizeof(uint32_t));
+  if (mprotect((void *)target_page, (size_t)page_size,
+               PROT_READ | PROT_EXEC) != 0) {
+    fprintf(stderr, "[QUIT] mprotect RX do alvo falhou: %s\n",
+            strerror(errno));
+    return 0;
+  }
+  fprintf(stderr,
+          "[QUIT] Game.Exit conectado ao teardown (alvo=%p ponte=%p)\n",
+          (void *)target, (void *)island);
+  return 1;
+}
 /* exposto p/ pthread_fake.c (TER_JOBLOG: symbolizar start_routine dos workers) */
 uintptr_t ter_unity_base(void) { return g_unity_base; }
 uintptr_t ter_il2cpp_base(void) { return g_il2cpp_base; }
@@ -4786,6 +4923,11 @@ int main(int argc, char **argv) {
       gp_init(g_il2cpp_base);
     }
     if (getenv("CUP_STAGESPY")) stagespy_install(g_il2cpp_base);
+    if (!ter_install_game_exit_hook()) {
+      fprintf(stderr,
+              "[QUIT] recusando executar sem a ponte Game.Exit validada\n");
+      _exit(76);
+    }
     so_finalize(); so_flush_caches();
     fprintf(stderr, "[F1] libil2cpp init_array...\n");
     so_execute_init_array();
@@ -5206,18 +5348,32 @@ int main(int argc, char **argv) {
       wait_all(g_preload_mgr);
     }
     if (ter_verbose && f < 200) { fprintf(stderr, "[r%d>\n", f); dbg_sync(); }
+    unsigned char keep_rendering = 1;
     if (g_skipbad) {
       /* arma o recovery: se nativeRender crashar nesta thread, volta aqui e pula o frame */
       if (sigsetjmp(g_render_jmp, 1) == 0) {
         g_render_jmp_armed = 1;
-        ((unsigned char (*)(void *, void *))render)(env, &thiz);
+        keep_rendering =
+            ((unsigned char (*)(void *, void *))render)(env, &thiz);
       } else {
         if (g_recover_n < 80 || (g_recover_n % 60) == 0)
           fprintf(stderr, "[RECOVER] frame %d pulado (crash #%lu na render)\n", f, g_recover_n);
       }
       g_render_jmp_armed = 0;
     } else {
-      ((unsigned char (*)(void *, void *))render)(env, &thiz);
+      keep_rendering =
+          ((unsigned char (*)(void *, void *))render)(env, &thiz);
+    }
+    /* UnityPlayer's Java render thread treats false as an engine-owned quit
+     * signal (for example Application.Quit). Calling nativeRender
+     * again after that signal waits on teardown work that only the missing
+     * Android Activity would drive.  The proven Prizefighters 2 loader stops
+     * at this boundary; converge on our existing focus-loss/pause watchdog. */
+    if (!keep_rendering) {
+      fprintf(stderr,
+              "[F2] nativeRender solicitou encerramento no frame %d\n", f);
+      ter_request_quit();
+      break;
     }
     if (ter_verbose && f < 200) { fprintf(stderr, "<r%d]\n", f); dbg_sync(); }
     opensles_shim_pump_callbacks();

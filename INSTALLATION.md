@@ -7,7 +7,7 @@
 ### Requisitos
 
 - aparelho Linux **AArch64/ARM64** com Python 3, SDL2, EGL e GLES2;
-- [release pública v1.0.1](https://github.com/NextOs-Ports/terraria-nextos/releases/tag/v1.0.1);
+- [release pública v1.0.2](https://github.com/NextOs-Ports/terraria-nextos/releases/tag/v1.0.2);
 - APK legal do Terraria Android **1.4.5.6.4**, pacote
   `com.and.games505.TerrariaPaid`, contendo a ABI `arm64-v8a`;
 - espaço livre no mesmo filesystem da pasta do jogo. O NXExtract preserva uma
@@ -67,9 +67,10 @@ No teclado de nomes, use D-pad para navegar, `A` ou `R3` para escolher, `B`
 para apagar, `X` para alternar maiúsculas/minúsculas, `START` para confirmar
 `DONE` e `SELECT` para cancelar.
 
-Pressione **`SELECT+START` juntos** para sair imediatamente. Não é necessário
-segurar por 750 ms. O combo também funciona com o teclado aberto e é consumido
-antes que `START` chegue ao menu Pause.
+Escolha **`Quit Game`** no próprio Terraria para sair pelo sinal original do
+motor, ou pressione **`SELECT+START` juntos** para sair imediatamente. Não é
+necessário segurar o combo. Ele também funciona com o teclado aberto e é
+consumido antes que `START` chegue ao menu Pause.
 
 ### Solução de problemas
 
@@ -108,7 +109,7 @@ antes que `START` chegue ao menu Pause.
 ### Requirements
 
 - an **AArch64/ARM64** Linux handheld with Python 3, SDL2, EGL, and GLES2;
-- the [public v1.0.1 release](https://github.com/NextOs-Ports/terraria-nextos/releases/tag/v1.0.1);
+- the [public v1.0.2 release](https://github.com/NextOs-Ports/terraria-nextos/releases/tag/v1.0.2);
 - a legal Terraria Android **1.4.5.6.4** APK, package
   `com.and.games505.TerrariaPaid`, containing the `arm64-v8a` ABI;
 - free space on the same filesystem as the game directory. NXExtract preserves
@@ -168,7 +169,8 @@ On the name keyboard, use the D-pad to navigate, `A` or `R3` to choose, `B` to
 delete, `X` to toggle upper/lower case, `START` to confirm `DONE`, and `SELECT`
 to cancel.
 
-Press **`SELECT+START` together** to exit immediately. A 750 ms hold is not
+Choose **`Quit Game`** inside Terraria to exit through the engine's original
+signal, or press **`SELECT+START` together** for an immediate exit. No hold is
 required. The combo also works while the keyboard is open and is consumed
 before `START` reaches the Pause menu.
 

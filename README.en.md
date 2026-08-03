@@ -16,9 +16,9 @@ configuration transactionally.
 
 ## Download
 
-- [Release v1.0.1](https://github.com/NextOs-Ports/terraria-nextos/releases/tag/v1.0.1)
-- [Download `terraria.zip`](https://github.com/NextOs-Ports/terraria-nextos/releases/download/v1.0.1/terraria.zip)
-- SHA-256: `0b10e79759529e3421ba341ecd4531a8ce9b36659a6d86d8af232ec933d95167`
+- [Release v1.0.2](https://github.com/NextOs-Ports/terraria-nextos/releases/tag/v1.0.2)
+- [Download `terraria.zip`](https://github.com/NextOs-Ports/terraria-nextos/releases/download/v1.0.2/terraria.zip)
+- SHA-256: `ff21f803f0fbee4ee30bc17ac1a93746abfab1027e04ff6b00d43c2738d6294e`
 
 ## Gallery — real on-device captures
 
@@ -69,7 +69,8 @@ a successful build alone.
    `terraria/gamedata/`. Its filename does not matter.
 3. Open `Terraria` in the frontend. NXExtract validates and prepares the data
    on the first launch.
-4. Press `SELECT+START` together to exit immediately.
+4. To exit, use `Quit Game` inside Terraria or press `SELECT+START` together
+   for an immediate exit.
 
 The firmware must provide Python 3, SDL2, EGL and GLES2. See
 [INSTALLATION.md](INSTALLATION.md) for installation, update, free-space, and
@@ -104,10 +105,11 @@ On the name keyboard:
 | Toggle upper/lower case | `X` |
 | Confirm with `DONE` | `START` |
 | Cancel | `SELECT` |
-| Exit the game | `SELECT+START` together |
+| Exit immediately | `SELECT+START` together |
 
 `SPACE`, `SHIFT`, `DEL`, and `DONE` are also directly selectable. The exit
-shortcut works even while the keyboard is open.
+shortcut works even while the keyboard is open. Terraria's own `Quit Game`
+action also stops the loader and returns to the frontend.
 
 ## How the loader avoids depending on one device
 
@@ -137,9 +139,12 @@ managed-thread `Draw`, calls `CloseNameEdit`, and later follows the original
 Create-button path. This applies to both player and world names, preserving
 validation and save creation.
 
-When `SELECT+START` is pressed, the combo is consumed before it reaches the
-pause menu, the loader sends focus loss and `nativePause`, and a three-second
-watchdog guarantees return if a driver stalls on the final frame.
+`Quit Game` preserves the original `SaveSettings` and social-shutdown flow, but
+connects the Android version's empty `Game.Exit` method to the loader teardown.
+The `false` return from `nativeRender` is honored as well. When `SELECT+START`
+is pressed, the combo is consumed before it reaches the pause menu. All paths
+converge on focus loss, `nativePause`, and a three-second watchdog that
+guarantees return if a driver stalls on the final frame.
 
 ## Owner-supplied data
 
