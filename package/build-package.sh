@@ -112,10 +112,10 @@ PAD_LAYOUT=$(readelf -sW "$STAGE/terraria/terraria" |
 [[ $TLS_FILESZ == 0x000100 && $PAD_LAYOUT == 0000000000000000:256 ]] ||
   fail "audited TLS layout changed: template=$TLS_FILESZ pad=$PAD_LAYOUT"
 
-[[ $(tr -d '\r\n' < "$NX_DIR/VERSION") == 1.2.0 ]] ||
-  fail "vendored NXExtract is not version 1.2.0"
+[[ $(tr -d '\r\n' < "$NX_DIR/VERSION") == 1.2.1 ]] ||
+  fail "vendored NXExtract is not version 1.2.1"
 declare -A NX_HASHES=(
-  [nxextract.py]=55664066d2ff0e5b7b83b6285d6606cca74923e80183d2f2e176e6353b93abd5
+  [nxextract.py]=0167a8fb37965c8c5d00fe3f0d33cfc07bc6c393e3510543678714e34dc0c5ff
   [nxextract-runtime-env.sh]=332919a9960d4317563b647f9932d1a4367da147a425fe2f78eafd706f01563f
   [run-extractor.sh]=3c61f638a25f0ca9c5c5a94d33660886aaff17a18347c9e954afd4b0e9b3efba
   [nxextract-ui]=046afb583f5a211c946495e639409f81d9cfec706788eeccb7924b0e8e5a50b6

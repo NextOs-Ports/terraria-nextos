@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.3
+
+- A fully installed game is no longer reported as a failed data setup.
+  NXExtract 1.2.1 drops its scratch source cache only after every source
+  archive is closed, and a removal the filesystem still refuses is logged
+  instead of aborting the run. On FUSE-backed shares -- exFAT as Knulli and
+  Batocera use it for `/userdata`, plus NFS and SMB -- a file unlinked while
+  still open leaves a hidden placeholder behind, so `source-cache/bundle-*`
+  answered `[Errno 39] Directory not empty` seconds after the payload had been
+  committed and validated, and the launcher stopped with a data-setup error
+  even though the extraction had finished correctly.
+- The loader binary is unchanged from 1.0.2. This release touches the data
+  extractor only.
+
 ## 1.0.2
 
 - Connected Terraria's four-byte no-op `Game.Exit` method to the loader's
