@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.1.3
+
+- Boot every accepted Play Store build, not just the reference binary. The
+  1.1.2 installer already accepted any structurally sound 1.4.5.6.4 payload,
+  but the loader still crashed at boot on builds whose libraries are laid
+  out differently (verified on device with the Play build 301544, both as an
+  APKMirror `.apkm` and an APKPure `.xapk`). Four fixes, all replacing
+  reference-only assumptions:
+  - shim `fstat` — newer-NDK builds import it directly and glibc only
+    exports it from 2.33 on, so the unresolved slot jumped to garbage on
+    the first file check of Unity's init;
+  - resolve `fmodGetInfo` through the FMOD JNI registration by name (the
+    fixed engine offset only exists in the reference build); audio still
+    plays at the mixer's real rate on any build;
+  - answer `getaddrinfo` with an honest failure (the old stub reported
+    success without results, so builds that ship with Unity's performance
+    reporter enabled dereferenced uninitialized memory during startup);
+  - resolve the IL2CPP C API by symbol name in the controller bridge and
+    the frame driver instead of fixed offsets.
+- `.apkm` (APKMirror) and `.xapk` (APKPure) containers verified end to end
+  on device, alongside single APKs, `.apks` bundles and merged repacks.
+
 ## 1.1.2
 
 - Fixed the installer rejecting every legitimate APK with "unsupported Unity
