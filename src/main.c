@@ -2911,18 +2911,26 @@ static void ter_name_pump(void) {
 /* 🗺️ Mapa fullscreen do build mobile: o zoom nativo é SÓ pinça de toque
  * (GUIZoom.UpdatePinchZoom) e os botões de zoom são UI de toque, escondida em
  * modo controle; GUIControllerFullScreenMap só navega. Sem toque no so-loader,
- * dirigimos os campos estáticos Main.mapFullscreenScale/Pos direto: LT/RT =
- * zoom, stick direito = pan. Tudo resolvido POR NOME via API il2cpp (nenhum
- * RVA: funciona em qualquer build). Desativa com TER_NOMAPCTL=1. */
+ * dirigimos o estado do mapa direto: LT/RT = zoom, stick direito = pan.
+ * Neste build o estado mora em UserManagement.LocalUsers[0].GameState
+ * (LocalUserGameState.mapFullscreen/mapFullscreenScale/mapFullscreenPos),
+ * não em Terraria.Main. Toda a cadeia é resolvida POR NOME via API il2cpp
+ * (nenhum RVA: funciona em qualquer build). Desativa com TER_NOMAPCTL=1. */
 extern float np_axis(int a);
 static void ter_map_controls(void) {
   static int failed, ready;
-  static void *fld_full, *fld_scale, *fld_pos;
-  static void (*f_sget)(void *, void *), (*f_sset)(void *, void *);
+  static void *fld_users;
+  static size_t off_items, off_size, off_gamestate;
+  static size_t off_full, off_scale, off_pos;
+  static void (*f_sget)(void *, void *);
+  static void *(*obj_class)(void *);
+  static void *(*cls_field)(void *, const char *);
+  static size_t (*fld_off)(void *);
   if (failed || getenv("TER_NOMAPCTL") || !g_il2cpp_base) return;
   if (!ready) {
     static int tries;
-    if (tries++ > 900) { failed = 1; return; }
+    int diag = (++tries == 300 || tries == 1800);
+    if (tries > 1800) { failed = 1; return; }
     void *(*dom_get)(void) = (void *)ter_i2sym("il2cpp_domain_get", 0x73c860);
     const void **(*dom_asms)(void *, size_t *) =
         (void *)ter_i2sym("il2cpp_domain_get_assemblies", 0x73c86c);
@@ -2930,48 +2938,91 @@ static void ter_map_controls(void) {
         (void *)ter_i2sym("il2cpp_assembly_get_image", 0x73c22c);
     void *(*cls_from_name)(void *, const char *, const char *) =
         (void *)ter_i2sym("il2cpp_class_from_name", 0x73c264);
-    void *(*cls_field)(void *, const char *) =
-        (void *)ter_i2sym("il2cpp_class_get_field_from_name", 0x73c284);
+    cls_field = (void *)ter_i2sym("il2cpp_class_get_field_from_name", 0x73c284);
+    fld_off = (void *)ter_i2sym("il2cpp_field_get_offset", 0x73ca28);
+    obj_class = (void *)ter_i2sym("il2cpp_object_get_class", 0x73cc28);
     f_sget = (void *)ter_i2sym("il2cpp_field_static_get_value", 0x73ca44);
-    f_sset = (void *)ter_i2sym("il2cpp_field_static_set_value", 0x73ca48);
     void *domain = dom_get(); if (!domain) return;
     size_t na = 0; const void **asms = dom_asms(domain, &na);
     if (!asms || !na) return;
-    for (size_t i = 0; i < na && !fld_full; i++) {
+    void *cls_um = NULL, *cls_gs = NULL;
+    for (size_t i = 0; i < na && (!cls_um || !cls_gs); i++) {
       void *img = asm_img(asms[i]); if (!img) continue;
-      void *cls = cls_from_name(img, "Terraria", "Main"); if (!cls) continue;
-      fld_full  = cls_field(cls, "mapFullscreen");
-      fld_scale = cls_field(cls, "mapFullscreenScale");
-      fld_pos   = cls_field(cls, "mapFullscreenPos");
+      if (!cls_um) cls_um = cls_from_name(img, "", "UserManagement");
+      if (!cls_gs) cls_gs = cls_from_name(img, "", "LocalUserGameState");
     }
-    if (!fld_full || !fld_scale || !fld_pos) return;
+    if (!cls_um || !cls_gs) {
+      if (diag) { fprintf(stderr, "[MAPCTL] try%d: UserManagement=%p LocalUserGameState=%p\n",
+                          tries, cls_um, cls_gs); fsync(2); }
+      return;
+    }
+    fld_users = cls_field(cls_um, "LocalUsers");
+    void *f_full  = cls_field(cls_gs, "mapFullscreen");
+    void *f_scale = cls_field(cls_gs, "mapFullscreenScale");
+    void *f_pos   = cls_field(cls_gs, "mapFullscreenPos");
+    if (!fld_users || !f_full || !f_scale || !f_pos) {
+      if (diag) { fprintf(stderr, "[MAPCTL] try%d: users=%p full=%p scale=%p pos=%p\n",
+                          tries, fld_users, f_full, f_scale, f_pos); fsync(2); }
+      failed = 1; return;
+    }
+    off_full = fld_off(f_full); off_scale = fld_off(f_scale); off_pos = fld_off(f_pos);
     ready = 1;
     fprintf(stderr, "[MAPCTL] mapa fullscreen: zoom LT/RT + pan stick direito "
-            "(campos Main.* por nome)\n");
+            "(LocalUserGameState off full=0x%zx scale=0x%zx pos=0x%zx)\n",
+            off_full, off_scale, off_pos);
     fsync(2);
   }
-  unsigned char fullscreen = 0;
-  f_sget(fld_full, &fullscreen);
-  if (!fullscreen) return;
+  /* Recaminha a cada frame: o LocalUser pode ser recriado em troca de save. */
+  void *list = NULL;
+  f_sget(fld_users, &list);
+  if (!list) return;
+  static int users_is_array;
+  if (!off_items || !off_size) {
+    void *lc = obj_class(list); if (!lc) return;
+    void *fi = cls_field(lc, "_items"), *fs = cls_field(lc, "_size");
+    if (fi && fs) {
+      off_items = fld_off(fi); off_size = fld_off(fs);
+    } else {
+      /* LocalUser[] direto: length em +0x18, elementos a partir de +0x20 */
+      users_is_array = 1; off_items = 0x20; off_size = 0x18;
+    }
+  }
+  void *user;
+  if (users_is_array) {
+    if (*(int64_t *)((char *)list + off_size) < 1) return;
+    user = *(void **)((char *)list + off_items);
+  } else {
+    if (*(int32_t *)((char *)list + off_size) < 1) return;
+    void *items = *(void **)((char *)list + off_items);
+    if (!items) return;
+    user = *(void **)((char *)items + 0x20); /* header de Il2CppArray */
+  }
+  if (!user) return;
+  if (!off_gamestate) {
+    void *uc = obj_class(user); if (!uc) return;
+    void *fg = cls_field(uc, "GameState");
+    if (!fg) { failed = 1; return; }
+    off_gamestate = fld_off(fg);
+  }
+  void *gs = *(void **)((char *)user + off_gamestate);
+  if (!gs) return;
+  if (!*(unsigned char *)((char *)gs + off_full)) return; /* mapa fechado */
+  float *scale = (float *)((char *)gs + off_scale);
+  float *pos = (float *)((char *)gs + off_pos);
   float lt = np_axis(4), rt = np_axis(5);
   if (lt > 0.25f || rt > 0.25f) {
-    float scale = 1.0f;
-    f_sget(fld_scale, &scale);
-    if (rt > 0.25f) scale *= 1.0f + 0.045f * rt;
-    if (lt > 0.25f) scale /= 1.0f + 0.045f * lt;
-    if (scale < 0.2f) scale = 0.2f;
-    if (scale > 16.0f) scale = 16.0f;
-    f_sset(fld_scale, &scale);
+    float s = *scale;
+    if (rt > 0.25f) s *= 1.0f + 0.045f * rt;
+    if (lt > 0.25f) s /= 1.0f + 0.045f * lt;
+    if (s < 0.2f) s = 0.2f;
+    if (s > 16.0f) s = 16.0f;
+    *scale = s;
   }
   float rx = np_axis(2), ry = np_axis(3);
   if (rx > 0.3f || rx < -0.3f || ry > 0.3f || ry < -0.3f) {
-    float scale = 1.0f, pos[2] = {0, 0};
-    f_sget(fld_scale, &scale);
-    if (scale < 0.2f) scale = 0.2f;
-    f_sget(fld_pos, pos);
-    pos[0] += rx * 10.0f / scale;
-    pos[1] += ry * 10.0f / scale;
-    f_sset(fld_pos, pos);
+    float s = *scale < 0.2f ? 0.2f : *scale;
+    pos[0] += rx * 10.0f / s;
+    pos[1] += ry * 10.0f / s;
   }
 }
 
