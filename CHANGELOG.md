@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.2
+
+- Fixed the installer rejecting every legitimate APK with "unsupported Unity
+  engine 2018.3.0a1". `libunity.so` embeds historical version constants in
+  its serialization compatibility tables besides the real engine version,
+  and the placeholder can sit at a lower file offset; the validator took the
+  first version-shaped string it found and refused the build. It now
+  collects every version string and picks the real engine version, so any
+  Unity 2021.3 build of Terraria 1.4.5.6.4 installs again. No changes to the
+  game loader itself.
+
 ## 1.1.1
 
 - Gave the fullscreen map real controller support. The mobile build only ever
