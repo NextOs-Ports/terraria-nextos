@@ -112,13 +112,13 @@ PAD_LAYOUT=$(readelf -sW "$STAGE/terraria/terraria" |
 [[ $TLS_FILESZ == 0x000100 && $PAD_LAYOUT == 0000000000000000:256 ]] ||
   fail "audited TLS layout changed: template=$TLS_FILESZ pad=$PAD_LAYOUT"
 
-[[ $(tr -d '\r\n' < "$NX_DIR/VERSION") == 1.2.1 ]] ||
-  fail "vendored NXExtract is not version 1.2.1"
+[[ $(tr -d '\r\n' < "$NX_DIR/VERSION") == 1.2.2 ]] ||
+  fail "vendored NXExtract is not version 1.2.2"
 declare -A NX_HASHES=(
-  [nxextract.py]=0167a8fb37965c8c5d00fe3f0d33cfc07bc6c393e3510543678714e34dc0c5ff
+  [nxextract.py]=cc377d06ffb0cd1f9cc9469a2c4f295eef4ce240bd742243542ddc2f8508a417
   [nxextract-runtime-env.sh]=332919a9960d4317563b647f9932d1a4367da147a425fe2f78eafd706f01563f
   [run-extractor.sh]=3c61f638a25f0ca9c5c5a94d33660886aaff17a18347c9e954afd4b0e9b3efba
-  [nxextract-ui]=046afb583f5a211c946495e639409f81d9cfec706788eeccb7924b0e8e5a50b6
+  [nxextract-ui]=ed381735953d14d304fcfbf6f673fc9ff4f37e42c8b1f3a9bee2a881cfdbeff8
 )
 for relative in "${!NX_HASHES[@]}"; do
   actual=$(sha256sum "$STAGE/terraria/$relative" | awk '{print $1}')

@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "id": "terraria-nextos",
-  "version": "1.4.5.6.4-universal-1",
+  "version": "1.4.5.6.4-universal-2",
   "title": "TERRARIA",
   "abi_order": [
     "arm64-v8a"
@@ -20,7 +20,7 @@
   },
   "extract": [
     {
-      "id": "unity-data-14564",
+      "id": "unity-data",
       "source": {
         "kind": "entries",
         "patterns": [
@@ -31,9 +31,10 @@
       "destination": "bin",
       "validate": {
         "type": "tree",
-        "exact_files": 10,
-        "min_bytes": 164944408,
-        "max_bytes": 164944505,
+        "min_files": 6,
+        "max_files": 64,
+        "min_bytes": 83886080,
+        "max_bytes": 629145600,
         "required_paths": [
           "Data/boot.config",
           "Data/data.unity3d",
@@ -44,7 +45,7 @@
       }
     },
     {
-      "id": "android-libunity-14564",
+      "id": "android-libunity",
       "source": {
         "kind": "entry",
         "patterns": [
@@ -54,13 +55,13 @@
       "destination": "libunity.so",
       "validate": {
         "type": "file",
-        "size": 13154416,
-        "sha256": "6456fbddbe10addc6c7c2253f8ad6ff589a01309945d1e1194d2890a21709574",
+        "min_size": 6291456,
+        "max_size": 67108864,
         "elf_machine": "{abi}"
       }
     },
     {
-      "id": "android-libil2cpp-14564",
+      "id": "android-libil2cpp",
       "source": {
         "kind": "entry",
         "patterns": [
@@ -70,13 +71,13 @@
       "destination": "libil2cpp.so",
       "validate": {
         "type": "file",
-        "size": 54061072,
-        "sha256": "dc67ce5f48dc4738977e52fa524115beb95a641410eec39458adaf8f03b10c25",
+        "min_size": 20971520,
+        "max_size": 268435456,
         "elf_machine": "{abi}"
       }
     },
     {
-      "id": "android-libcxx-14564",
+      "id": "android-libcxx",
       "source": {
         "kind": "entry",
         "patterns": [
@@ -86,8 +87,8 @@
       "destination": "libc++_shared.so",
       "validate": {
         "type": "file",
-        "size": 1058904,
-        "sha256": "218ecc677aa79e1974f3968d2e0ecd0172c4f517188d04ebd7d45cbb285b5d03",
+        "min_size": 131072,
+        "max_size": 16777216,
         "elf_machine": "{abi}"
       }
     }
@@ -108,15 +109,15 @@
         {
           "path": ".terraria-data.json",
           "type": "file",
-          "size": 944,
-          "sha256": "5a929d43222b790c2106809ec5295fb56288845fa18ea86fd185eb80d323cfbb",
+          "min_size": 200,
+          "max_size": 65536,
           "magic_ascii": "{"
         },
         {
           "path": "bin/Data/boot.config",
           "type": "file",
-          "size": 204,
-          "sha256": "382f504549327ce2cdc94a37bbe2592ccb15a11d787ee911a5353f7e5e464dea"
+          "min_size": 80,
+          "max_size": 8192
         }
       ]
     }
@@ -125,62 +126,63 @@
     {
       "path": ".terraria-data.json",
       "type": "file",
-      "size": 944,
-      "sha256": "5a929d43222b790c2106809ec5295fb56288845fa18ea86fd185eb80d323cfbb",
+      "min_size": 200,
+      "max_size": 65536,
       "magic_ascii": "{"
     },
     {
       "path": "bin",
       "type": "tree",
-      "exact_files": 10,
-      "exact_bytes": 164944505,
+      "min_files": 6,
+      "max_files": 64,
+      "min_bytes": 83886080,
+      "max_bytes": 629145600,
       "required_paths": [
         "Data/boot.config",
         "Data/data.unity3d",
         "Data/Managed/Metadata/global-metadata.dat",
         "Data/resources.resource",
         "Data/unity default resources"
-      ],
-      "tree_fingerprint": "f019ca71aadaa4e56c26efff078bed4e883a99ee4c196c5a71e53bd8ed3f519b"
+      ]
     },
     {
       "path": "bin/Data/boot.config",
       "type": "file",
-      "size": 204,
-      "sha256": "382f504549327ce2cdc94a37bbe2592ccb15a11d787ee911a5353f7e5e464dea"
+      "min_size": 80,
+      "max_size": 8192
     },
     {
       "path": "bin/Data/data.unity3d",
       "type": "file",
-      "size": 70136966,
-      "sha256": "edd9116404ead3f690c465d78aa2a6b95df7a7d41e9222a9d8aa7c284c269fa1",
+      "min_size": 20971520,
+      "max_size": 419430400,
       "magic_ascii": "UnityFS"
     },
     {
       "path": "bin/Data/Managed/Metadata/global-metadata.dat",
       "type": "file",
-      "size": 8805208,
-      "sha256": "7680b730578ba1d17bc8fd4097fe194c78d396181afbb737a236537f8eaea0a1"
+      "min_size": 2097152,
+      "max_size": 67108864
     },
     {
       "path": "libunity.so",
       "type": "file",
-      "size": 13154416,
-      "sha256": "6456fbddbe10addc6c7c2253f8ad6ff589a01309945d1e1194d2890a21709574",
+      "min_size": 6291456,
+      "max_size": 67108864,
       "elf_machine": "arm64-v8a"
     },
     {
       "path": "libil2cpp.so",
       "type": "file",
-      "size": 54061072,
-      "sha256": "dc67ce5f48dc4738977e52fa524115beb95a641410eec39458adaf8f03b10c25",
+      "min_size": 20971520,
+      "max_size": 268435456,
       "elf_machine": "arm64-v8a"
     },
     {
       "path": "libc++_shared.so",
       "type": "file",
-      "size": 1058904,
-      "sha256": "218ecc677aa79e1974f3968d2e0ecd0172c4f517188d04ebd7d45cbb285b5d03",
+      "min_size": 131072,
+      "max_size": 16777216,
       "elf_machine": "arm64-v8a"
     }
   ],

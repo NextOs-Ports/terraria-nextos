@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.1.0 (test build)
+
+- Accept every structurally sound Play Store build of Terraria 1.4.5.6.4, not
+  just the single reference build. Google Play ships more than one build of
+  the same visible version (and tools like AntiSplit-M repack them), so the
+  recipe now validates structure — package layout, ELF/ABI, UnityFS and
+  IL2CPP metadata signatures, Unity 2021.3 engine — instead of one exact
+  SHA-256 per file. The reference build is still recognized by hash and gets
+  the full patch set; unknown builds are labelled in `.terraria-data.json`.
+- On unknown builds the loader only applies patches whose target bytes it can
+  verify first. The IL2CPP C API is now resolved by exported symbol name
+  (build-independent); the storage-space bypass verifies it is really looking
+  at the expected `tbz` before NOPing it; the Quit-Game bridge degrades to a
+  log line instead of refusing to start (`SELECT+START` always exits);
+  RVA-only extras (auto-name enter hook, audio stream fallback) switch off
+  with a clear message instead of patching blind.
+- Protect saves against truncation: writable files are fsynced on close, every
+  abnormal exit path (`crash`, watchdog timeout) now calls `sync()` before
+  leaving, and the final quit watchdog allows 15 s (was 5 s) so a slow SD card
+  can finish writing the world before teardown. A truncated `.map`/`.wld` is
+  the reported "world only loads with the minimap disabled" failure.
+- Always report silent depth/stencil downgrades and incomplete framebuffers
+  in `run.log` (previously diagnostic-only), to pin down the "minimap
+  sometimes does not open" report on GLES2 drivers.
+- NXExtract 1.2.2: a failed extraction can no longer leave the fullscreen
+  setup UI holding the display, input and virtual terminal — the reported
+  "R36S cannot shut down safely after a failed setup". The launcher also
+  terminates any stray setup UI (matched by its working directory) and resets
+  the tty on the error path.
+
 ## 1.0.3
 
 - A fully installed game is no longer reported as a failed data setup.

@@ -73,10 +73,49 @@ __attribute__((aligned(16))) static _Thread_local char g_bionic_guard_pad[256] =
 /* fsync(stderr→debug.log): garante que o log sobrevive a hang/power-cycle */
 static void dbg_sync(void) { fsync(2); }
 
+/* ---- build identity ----
+ * O NXExtract aceita qualquer build estruturalmente valido da 1.4.5.6.4 (a
+ * Play Store publica versionCodes diferentes da mesma versao). O manifest
+ * .terraria-data.json marca se o payload e o build de referencia ("14564").
+ * Patches por RVA sem verificacao de bytes so podem rodar no build de
+ * referencia; num build desconhecido eles cairiam em opcode arbitrario. Um
+ * manifest formato-1 (sem a chave) so era gravado sob hash exato -> referencia. */
+static uintptr_t ter_i2sym(const char *name, unsigned long ref_rva);
+static int ter_known_build(void) {
+  static int cached = -1;
+  if (cached >= 0) return cached;
+  cached = 0;
+  const char *dir = getenv("TER_GAMEDIR");
+  char path[512];
+  snprintf(path, sizeof path, "%s/.terraria-data.json", dir ? dir : ".");
+  FILE *f = fopen(path, "rb");
+  if (!f) {
+    fprintf(stderr, "[BUILD] manifest ausente (%s); tratando como build desconhecido\n", path);
+    return cached;
+  }
+  static char blob[65536];
+  size_t got = fread(blob, 1, sizeof blob - 1, f);
+  fclose(f);
+  blob[got] = 0;
+  if (strstr(blob, "\"known_build\": false")) {
+    const char *id = strstr(blob, "\"build_id\": \"");
+    fprintf(stderr, "[BUILD] build desconhecido%s%.32s -- hooks por RVA fixo desativados; "
+            "apenas patches com assinatura verificada\n",
+            id ? ": " : "", id ? id + 13 : "");
+  } else {
+    cached = 1;
+    fprintf(stderr, "[BUILD] build de referencia (14564): patches completos habilitados\n");
+  }
+  return cached;
+}
+
 /* Hotkey, SDL_QUIT and Unix termination signals all converge here. The render
  * loop owns the Android lifecycle shutdown; signal handlers only set a flag. */
 static volatile sig_atomic_t g_ter_quit_requested;
-static void ter_shutdown_timeout(int sig) { (void)sig; _exit(124); }
+/* sync() e async-signal-safe: mesmo num teardown por timeout, os .wld/.map/
+ * .plr que o jogo acabou de escrever saem do page cache antes do _exit —
+ * um .map truncado e exatamente o save que "so abre com o minimapa off". */
+static void ter_shutdown_timeout(int sig) { (void)sig; sync(); _exit(124); }
 void ter_request_quit(void) {
   if (g_ter_quit_requested) return;
   g_ter_quit_requested = 1;
@@ -343,11 +382,11 @@ static void ter_nuke_methods(void) {
   int want_nanpart = getenv("TER_FIXNANPART") ? 1 : 0;
   if (done || !g_il2cpp_base || (!want_kb && !want_nanpart)) { if (!want_kb && !want_nanpart) done = 1; return; }
   static int tries = 0; if (tries++ > 600) { done = 1; return; }
-  void *(*dom_get)(void) = (void *)(g_il2cpp_base + 0x73c860);
-  const void **(*dom_asms)(void *, size_t *) = (void *)(g_il2cpp_base + 0x73c86c);
-  void *(*asm_img)(const void *) = (void *)(g_il2cpp_base + 0x73c22c);
-  void *(*cls_from_name)(void *, const char *, const char *) = (void *)(g_il2cpp_base + 0x73c264);
-  void *(*cls_method)(void *, const char *, int) = (void *)(g_il2cpp_base + 0x73c28c);
+  void *(*dom_get)(void) = (void *)(ter_i2sym("il2cpp_domain_get", 0x73c860));
+  const void **(*dom_asms)(void *, size_t *) = (void *)(ter_i2sym("il2cpp_domain_get_assemblies", 0x73c86c));
+  void *(*asm_img)(const void *) = (void *)(ter_i2sym("il2cpp_assembly_get_image", 0x73c22c));
+  void *(*cls_from_name)(void *, const char *, const char *) = (void *)(ter_i2sym("il2cpp_class_from_name", 0x73c264));
+  void *(*cls_method)(void *, const char *, int) = (void *)(ter_i2sym("il2cpp_class_get_method_from_name", 0x73c28c));
   void *domain = dom_get(); if (!domain) return;
   size_t na = 0; const void **asms = dom_asms(domain, &na); if (!asms || !na) return;
   struct nuke_target { const char *env, *ns, *cn, *mn; int argc; };
@@ -402,11 +441,11 @@ static void ter_fix_singleplayer(void) {
       c[0]=0xD2800000u; c[1]=0xF2A80000u; c[2]=0xD65F03C0u;   /* return 0x40000000 (1GB) */
       mprotect(pa,pgsz0*2,PROT_READ|PROT_EXEC); __builtin___clear_cache((char*)pa,(char*)pa+12);
       fprintf(stderr,"[FIXSP] GUILowDiskSpacePopup.DiskSpace -> 1GB\n"); fsync(2); dsdone=1; } }
-  void *(*dom_get)(void) = (void *)(g_il2cpp_base + 0x73c860);
-  const void **(*dom_asms)(void *, size_t *) = (void *)(g_il2cpp_base + 0x73c86c);
-  void *(*asm_img)(const void *) = (void *)(g_il2cpp_base + 0x73c22c);
-  void *(*cls_from_name)(void *, const char *, const char *) = (void *)(g_il2cpp_base + 0x73c264);
-  void *(*cls_method)(void *, const char *, int) = (void *)(g_il2cpp_base + 0x73c28c);
+  void *(*dom_get)(void) = (void *)(ter_i2sym("il2cpp_domain_get", 0x73c860));
+  const void **(*dom_asms)(void *, size_t *) = (void *)(ter_i2sym("il2cpp_domain_get_assemblies", 0x73c86c));
+  void *(*asm_img)(const void *) = (void *)(ter_i2sym("il2cpp_assembly_get_image", 0x73c22c));
+  void *(*cls_from_name)(void *, const char *, const char *) = (void *)(ter_i2sym("il2cpp_class_from_name", 0x73c264));
+  void *(*cls_method)(void *, const char *, int) = (void *)(ter_i2sym("il2cpp_class_get_method_from_name", 0x73c28c));
   void *domain = dom_get(); if (!domain) return;
   size_t na = 0; const void **asms = dom_asms(domain, &na); if (!asms || !na) return;
   for (size_t i = 0; i < na; i++) {
@@ -431,23 +470,23 @@ static void ter_fix_singleplayer(void) {
 static void ter_jobworkers0(void) {
   static int done = 0; if (done || !g_il2cpp_base || !getenv("TER_JOBWORKERS0")) { if (!getenv("TER_JOBWORKERS0")) done = 1; return; }
   static int tries = 0; if (tries++ > 240) { done = 1; return; }
-  void *(*dom_get)(void) = (void *)(g_il2cpp_base + 0x73c860);
-  const void **(*dom_asms)(void *, size_t *) = (void *)(g_il2cpp_base + 0x73c86c);
-  void *(*asm_img)(const void *) = (void *)(g_il2cpp_base + 0x73c22c);
-  void *(*cls_from_name)(void *, const char *, const char *) = (void *)(g_il2cpp_base + 0x73c264);
-  void *(*cls_method)(void *, const char *, int) = (void *)(g_il2cpp_base + 0x73c28c);
-  void *(*rt_invoke)(void *, void *, void **, void **) = (void *)(g_il2cpp_base + 0x73cc7c);
+  void *(*dom_get)(void) = (void *)(ter_i2sym("il2cpp_domain_get", 0x73c860));
+  const void **(*dom_asms)(void *, size_t *) = (void *)(ter_i2sym("il2cpp_domain_get_assemblies", 0x73c86c));
+  void *(*asm_img)(const void *) = (void *)(ter_i2sym("il2cpp_assembly_get_image", 0x73c22c));
+  void *(*cls_from_name)(void *, const char *, const char *) = (void *)(ter_i2sym("il2cpp_class_from_name", 0x73c264));
+  void *(*cls_method)(void *, const char *, int) = (void *)(ter_i2sym("il2cpp_class_get_method_from_name", 0x73c28c));
+  void *(*rt_invoke)(void *, void *, void **, void **) = (void *)(ter_i2sym("il2cpp_runtime_invoke", 0x73cc7c));
   void *domain = dom_get(); if (!domain) return;
   size_t na = 0; const void **asms = dom_asms(domain, &na); if (!asms || !na) return;
   for (size_t i = 0; i < na; i++) {
     void *img = asm_img(asms[i]); if (!img) continue;
     void *cls = cls_from_name(img, "Unity.Jobs.LowLevel.Unsafe", "JobsUtility"); if (!cls) continue;
     static int enum_once = 0;
-    if (getenv("TER_JOBENUM") && !enum_once && ++enum_once) { void (*cls_init)(void *) = (void *)(g_il2cpp_base + 0x73cc80); cls_init(cls);
+    if (getenv("TER_JOBENUM") && !enum_once && ++enum_once) { void (*cls_init)(void *) = (void *)(ter_i2sym("il2cpp_runtime_class_init", 0x73cc80)); cls_init(cls);
       fprintf(stderr, "[JOBWORKERS0] JobsUtility achada (asm %zu) — métodos:\n", i);
-      void *(*cls_methods)(void *, void **) = (void *)(g_il2cpp_base + 0x73c288);
-      const char *(*meth_name)(void *) = (void *)(g_il2cpp_base + 0x73cb9c);
-      unsigned (*meth_pc)(void *) = (void *)(g_il2cpp_base + 0x73cbac);
+      void *(*cls_methods)(void *, void **) = (void *)(ter_i2sym("il2cpp_class_get_methods", 0x73c288));
+      const char *(*meth_name)(void *) = (void *)(ter_i2sym("il2cpp_method_get_name", 0x73cb9c));
+      unsigned (*meth_pc)(void *) = (void *)(ter_i2sym("il2cpp_method_get_param_count", 0x73cbac));
       void *it = NULL, *mm; int cnt = 0;
       while ((mm = cls_methods(cls, &it)) && cnt++ < 60) fprintf(stderr, "   %s/%u\n", meth_name(mm), meth_pc(mm));
       fsync(2);
@@ -723,6 +762,7 @@ static void on_crash(int sig, siginfo_t *si, void *uc_) {
   crash_classify("x17", uc->uc_mcontext.regs[17]);
   fprintf(stderr, "[CR] ==== fim ====\n");
   dbg_sync();
+  sync(); /* nao deixar um save meio-escrito preso no page cache ao morrer */
   _exit(128 + sig);
 }
 
@@ -1108,6 +1148,20 @@ static int my_pthread_kill(pthread_t t, int sig) {
     return 0;
   }
   return pthread_kill(t, sig);
+}
+/* fsync-on-close: Terraria escreve .wld/.map/.plr sem fsync; morte abrupta
+   (OOM/crash/power) descarta o fim do arquivo do page cache -> save que "so
+   abre com o minimapa desligado". Um fsync por arquivo GRAVAVEL fechado e
+   barato (saves sao eventuais) e fecha essa janela para sempre. */
+static int my_close(int fd) {
+  if (fd > 2) {
+    int flags = fcntl(fd, F_GETFL);
+    if (flags != -1 && (flags & O_ACCMODE) != O_RDONLY) {
+      struct stat st;
+      if (fstat(fd, &st) == 0 && S_ISREG(st.st_mode)) fsync(fd);
+    }
+  }
+  return close(fd);
 }
 static void *my_memalign(unsigned long alignment, unsigned long size) {
   if (alignment < sizeof(void *)) alignment = sizeof(void *);
@@ -1785,7 +1839,8 @@ static void my_glRenderbufferStorage(unsigned tgt, unsigned ifmt, int w, int h) 
   if (r_glGetError2) r_glGetError2();                     /* limpa erro pendente */
   r_glRenderbufferStorage(tgt, ifmt, w, h);
   unsigned err = r_glGetError2 ? r_glGetError2() : 0;
-  fprintf(stderr, "[RBSTOR] rb=%d ifmt=0x%X %dx%d err=0x%X\n", ds_geti(0x8CA7), ifmt, w, h, err);
+  if (g_drawspy || err) /* fora do spy: só erro (ds_geti faz glGet* = stall Mali) */
+    fprintf(stderr, "[RBSTOR] rb=%d ifmt=0x%X %dx%d err=0x%X\n", ds_geti(0x8CA7), ifmt, w, h, err);
   if (err) {
     unsigned fb = 0;
     if (ifmt == 0x81A6 || ifmt == 0x81A7) fb = 0x81A5;          /* DEPTH24/32 -> DEPTH16 */
@@ -2330,7 +2385,7 @@ static void *ter_getinputtext_hook(long a0,long a1,long a2,long a3,long a4,
     g_name_enter_frames--;
     const char *nm = g_vkbd_force_text[0] ? g_vkbd_force_text :
                      (getenv("TER_VK_DEFAULT") ? getenv("TER_VK_DEFAULT") : "Player");
-    void *(*isn)(const char *) = (void *(*)(const char *))(g_il2cpp_base + 0x73cc98);
+    void *(*isn)(const char *) = (void *(*)(const char *))(ter_i2sym("il2cpp_string_new", 0x73cc98));
     /* RVAs CONFERIDOS no dump: set_chatText=0xF74E44, set_inputTextEnter=0xF74EF0
        (0xf74e9c/0xf74f4c eram os GETTERS — a 1a tentativa era no-op). Estamos na
        thread do jogo (chamados pelo Draw) -> thread-static ok. */
@@ -2406,14 +2461,14 @@ static void ter_player_select_draw_hook(void *self, void *mi) {
       g_render_frame - g_menu_nameedit_frame < 600 && g_il2cpp_base) {
     const char *t = jni_softinput_text();
     if (t && t[0]) {
-      void *(*isn)(const char *) = (void *(*)(const char *))(g_il2cpp_base + 0x73cc98);
+      void *(*isn)(const char *) = (void *(*)(const char *))(ter_i2sym("il2cpp_string_new", 0x73cc98));
       ter_il2cpp_set_string_field((void *)g_menu_nameedit_inst, 0x10, isn(t));  /* _editedName */
     }
   }
   if (g_pending_rename >= 0 && !ter_vkbd_blocking() && g_render_frame - g_pending_rename > 8) {
     g_pending_rename = -1;
     if (g_menu_nameedit_inst && g_vkbd_force_text[0] && g_il2cpp_base) {
-      void *(*isn)(const char *) = (void *(*)(const char *))(g_il2cpp_base + 0x73cc98);
+      void *(*isn)(const char *) = (void *(*)(const char *))(ter_i2sym("il2cpp_string_new", 0x73cc98));
       ter_il2cpp_set_string_field((void *)g_menu_nameedit_inst, 0x10,
                                   isn(g_vkbd_force_text));
     }
@@ -2512,7 +2567,7 @@ static const char *ter_vkbd_effective_name(const char *fallback) {
 static void ter_force_player_create_menu_name(void *self, const char *text) {
   if (!self || !g_il2cpp_base || !text || !text[0]) return;
   void *(*string_new)(const char *) =
-      (void *(*)(const char *))(g_il2cpp_base + 0x73cc98);
+      (void *(*)(const char *))(ter_i2sym("il2cpp_string_new", 0x73cc98));
   void *value = string_new(text);
   ter_il2cpp_set_string_field(self, 0x80, value); /* _playerName */
   ter_il2cpp_set_string_field(self, 0x88, value); /* editPlayerName */
@@ -2520,7 +2575,7 @@ static void ter_force_player_create_menu_name(void *self, const char *text) {
 static void ter_force_world_create_menu_name(void *self, const char *text) {
   if (!self || !g_il2cpp_base || !text || !text[0]) return;
   void *(*string_new)(const char *) =
-      (void *(*)(const char *))(g_il2cpp_base + 0x73cc98);
+      (void *(*)(const char *))(ter_i2sym("il2cpp_string_new", 0x73cc98));
   ter_il2cpp_set_string_field(self, 0x70, string_new(text)); /* _worldName */
 }
 static void ter_player_create_save_hook(void *self, void *mi) {
@@ -2563,11 +2618,11 @@ static void ter_world_create_hook(void *self, void *mi) {
 }
 unsigned long ter_method_off(const char *ns, const char *cn, const char *mn, int argc) {
   if (!g_il2cpp_base) return 0;
-  void *(*dom_get)(void) = (void*)(g_il2cpp_base + 0x73c860);
-  const void **(*dom_asms)(void*, size_t*) = (void*)(g_il2cpp_base + 0x73c86c);
-  void *(*asm_img)(const void*) = (void*)(g_il2cpp_base + 0x73c22c);
-  void *(*cls_from_name)(void*, const char*, const char*) = (void*)(g_il2cpp_base + 0x73c264);
-  void *(*cls_method)(void*, const char*, int) = (void*)(g_il2cpp_base + 0x73c28c);
+  void *(*dom_get)(void) = (void*)(ter_i2sym("il2cpp_domain_get", 0x73c860));
+  const void **(*dom_asms)(void*, size_t*) = (void*)(ter_i2sym("il2cpp_domain_get_assemblies", 0x73c86c));
+  void *(*asm_img)(const void*) = (void*)(ter_i2sym("il2cpp_assembly_get_image", 0x73c22c));
+  void *(*cls_from_name)(void*, const char*, const char*) = (void*)(ter_i2sym("il2cpp_class_from_name", 0x73c264));
+  void *(*cls_method)(void*, const char*, int) = (void*)(ter_i2sym("il2cpp_class_get_method_from_name", 0x73c28c));
   void *domain = dom_get(); if (!domain) return 0;
   size_t na=0; const void **as = dom_asms(domain, &na); if (!as) return 0;
   for (size_t i=0; i<na; i++) {
@@ -2591,9 +2646,15 @@ static void ter_name_hooks_install(void) {
       ter_install_hook4(psd, (void*)ter_player_select_draw_hook, (void**)&g_orig_player_select_draw))
     fprintf(stderr, "[VKBD] GUIPlayerSelectMenu.Draw hookado @0x%lx (rename)\n", psd);
   unsigned long wnn = ter_method_off("", "GUIWorldNameMenu", "Draw", 0);
-  if (!g_orig_getinputtext &&
+  if (!g_orig_getinputtext && ter_known_build() &&
       ter_install_hook4(0xFCD98C, (void*)ter_getinputtext_hook, (void**)&g_orig_getinputtext))
     fprintf(stderr, "[VKBD] GetInputText @0xFCD98C hookado (auto-enter)\n");
+  else if (!g_orig_getinputtext && !ter_known_build()) {
+    static int warned;
+    if (!warned++)
+      fprintf(stderr, "[VKBD] GetInputText por RVA requer o build de referencia; "
+              "entrada de nome usa o padrao TER_VK_DEFAULT neste build\n");
+  }
   unsigned long pen = ter_method_off("", "GUIPlayerCreateMenu", "EnterName", 0);
   unsigned long wen = ter_method_off("", "GUIWorldCreateMenu", "EnterName", 0);
   if (pen && !g_orig_player_entername &&
@@ -2638,7 +2699,7 @@ static void ter_name_hooks_install(void) {
 static void ter_il2cpp_set_string_field(void *obj, size_t off, void *s) {
   if (!obj || !s) return;
   void **slot = (void **)((char *)obj + off);
-  void (*wb)(void *, void **, void *) = (void *)(g_il2cpp_base + 0x73cb34);
+  void (*wb)(void *, void **, void *) = (void *)(ter_i2sym("il2cpp_gc_wbarrier_set_field", 0x73cb34));
   wb(obj, slot, s);
 }
 static void ter_player_name_menu_force_text(const char *text) {
@@ -2646,7 +2707,7 @@ static void ter_player_name_menu_force_text(const char *text) {
   int fnm = g_render_frame - g_player_name_menu_frame;
   void *inst = (void *)g_player_name_menu_inst;
   if (!inst || fnm < 0 || fnm >= 900) return;
-  void *(*isn)(const char *) = (void *(*)(const char *))(g_il2cpp_base + 0x73cc98);
+  void *(*isn)(const char *) = (void *(*)(const char *))(ter_i2sym("il2cpp_string_new", 0x73cc98));
   void *s = isn(text);
   ter_il2cpp_set_string_field(inst, 0x18, s);  /* GUIPlayerNameMenu.editPlayerName */
   if (getenv("TER_VKBDLOG")) {
@@ -2656,11 +2717,11 @@ static void ter_player_name_menu_force_text(const char *text) {
 }
 void *ter_static_obj(const char *ns, const char *cn, const char *fn) {
   if (!g_il2cpp_base) return NULL;
-  void *(*dom_get)(void) = (void*)(g_il2cpp_base + 0x73c860);
-  const void **(*dom_asms)(void*, size_t*) = (void*)(g_il2cpp_base + 0x73c86c);
-  void *(*asm_img)(const void*) = (void*)(g_il2cpp_base + 0x73c22c);
-  void *(*cls_from_name)(void*, const char*, const char*) = (void*)(g_il2cpp_base + 0x73c264);
-  void *(*getf)(void*, const char*) = (void*)(g_il2cpp_base + 0x73c284);
+  void *(*dom_get)(void) = (void*)(ter_i2sym("il2cpp_domain_get", 0x73c860));
+  const void **(*dom_asms)(void*, size_t*) = (void*)(ter_i2sym("il2cpp_domain_get_assemblies", 0x73c86c));
+  void *(*asm_img)(const void*) = (void*)(ter_i2sym("il2cpp_assembly_get_image", 0x73c22c));
+  void *(*cls_from_name)(void*, const char*, const char*) = (void*)(ter_i2sym("il2cpp_class_from_name", 0x73c264));
+  void *(*getf)(void*, const char*) = (void*)(ter_i2sym("il2cpp_class_get_field_from_name", 0x73c284));
   void (*sget)(void*,void*)=(void*)(g_il2cpp_base+0x73ca44);
   void *domain = dom_get(); if (!domain) return NULL;
   size_t na=0; const void **as = dom_asms(domain, &na); if (!as) return NULL;
@@ -2678,7 +2739,7 @@ static void ter_force_player_obj_name(void *player, void *s) {
 }
 static void ter_force_main_player_name(const char *text) {
   if (!g_il2cpp_base || !text || !text[0]) return;
-  void *(*isn)(const char *) = (void *(*)(const char *))(g_il2cpp_base + 0x73cc98);
+  void *(*isn)(const char *) = (void *(*)(const char *))(ter_i2sym("il2cpp_string_new", 0x73cc98));
   void *s = isn(text);
   int hits = 0;
   /* GUIPlayerCreateMenu.CreateAndSave serializes Main.PendingPlayer directly.
@@ -2706,7 +2767,7 @@ static void ter_force_main_player_name(const char *text) {
 }
 static void ter_name_force_text(const char *text) {
   if (!g_il2cpp_base || !text || !text[0]) return;
-  void *(*isn)(const char *) = (void *(*)(const char *))(g_il2cpp_base + 0x73cc98);
+  void *(*isn)(const char *) = (void *(*)(const char *))(ter_i2sym("il2cpp_string_new", 0x73cc98));
   void *s = isn(text);
   int fp = g_render_frame - g_player_create_menu_frame;
   int fw = g_render_frame - g_world_create_menu_frame;
@@ -2724,12 +2785,12 @@ static void ter_name_force_text(const char *text) {
 }
 static void ter_invoke0(const char *ns, const char *cn, const char *mn, void *obj) {
   if (!g_il2cpp_base || !obj) return;
-  void *(*dom_get)(void) = (void*)(g_il2cpp_base + 0x73c860);
-  const void **(*dom_asms)(void*, size_t*) = (void*)(g_il2cpp_base + 0x73c86c);
-  void *(*asm_img)(const void*) = (void*)(g_il2cpp_base + 0x73c22c);
-  void *(*cls_from_name)(void*, const char*, const char*) = (void*)(g_il2cpp_base + 0x73c264);
-  void *(*cls_method)(void*, const char*, int) = (void*)(g_il2cpp_base + 0x73c28c);
-  void *(*rt_invoke)(void*, void*, void**, void**) = (void*)(g_il2cpp_base + 0x73cc7c);
+  void *(*dom_get)(void) = (void*)(ter_i2sym("il2cpp_domain_get", 0x73c860));
+  const void **(*dom_asms)(void*, size_t*) = (void*)(ter_i2sym("il2cpp_domain_get_assemblies", 0x73c86c));
+  void *(*asm_img)(const void*) = (void*)(ter_i2sym("il2cpp_assembly_get_image", 0x73c22c));
+  void *(*cls_from_name)(void*, const char*, const char*) = (void*)(ter_i2sym("il2cpp_class_from_name", 0x73c264));
+  void *(*cls_method)(void*, const char*, int) = (void*)(ter_i2sym("il2cpp_class_get_method_from_name", 0x73c28c));
+  void *(*rt_invoke)(void*, void*, void**, void**) = (void*)(ter_i2sym("il2cpp_runtime_invoke", 0x73cc7c));
   void *domain = dom_get(); if (!domain) return;
   size_t na=0; const void **as = dom_asms(domain, &na); if (!as) return;
   for (size_t i=0; i<na; i++) {
@@ -2886,6 +2947,12 @@ static void *ds_route(const char *nm, void *real) {
     if (!strcmp(nm, "glClear"))        { ds_r_Clear = real;        return (void *)my_glClear; }
     if (!strcmp(nm, "glClearColor"))   { ds_r_ClearColor = real;   return (void *)my_glClearColor; }
   }
+  /* SEMPRE-ON: o rebaixamento silencioso de depth/stencil e o FBO incompleto
+     são a assinatura do minimapa (RenderTexture) que "às vezes não abre" —
+     precisam aparecer no run.log de produção, não só sob CUP_DRAWSPY. Fora do
+     spy, esses wrappers só logam em erro. */
+  if (!strcmp(nm, "glRenderbufferStorage")) { r_glRenderbufferStorage = real; return (void *)my_glRenderbufferStorage; }
+  if (!strcmp(nm, "glCheckFramebufferStatus")) { r_glCheckFBStatus = real; return (void *)my_glCheckFramebufferStatus; }
   if (!g_drawspy) return real;
   /* TEXTURAS (TEXHALF) — só estas precisam do roteamento em produção */
   if (!strcmp(nm, "glTexImage2D"))   { ds_r_TexImage2D = real;   w = (void *)my_glTexImage2D; }
@@ -2948,11 +3015,36 @@ static void *my_eglGetProcAddress(const char *nm) {
 static char g_dl_self, g_dl_il2cpp;
 static so_module *g_m_unity = NULL, *g_m_il2cpp = NULL;
 
+/* Resolve a export da API C do il2cpp pelo NOME no dynsym do modulo carregado
+ * (funciona em qualquer build). O RVA do build de referencia fica apenas como
+ * fallback; num build desconhecido sem o simbolo, devolve um stub que retorna
+ * NULL para o caller degradar em silencio em vez de saltar para lixo. */
+static long ter_i2sym_missing(void) { return 0; }
+static uintptr_t ter_i2sym(const char *name, unsigned long ref_rva) {
+  if (g_m_il2cpp) {
+    so_module *current = so_save();
+    so_use(g_m_il2cpp);
+    uintptr_t address = so_find_addr_safe(name);
+    so_use(current);
+    free(current);
+    if (address) return address;
+  }
+  if (ter_known_build() && g_il2cpp_base) return g_il2cpp_base + ref_rva;
+  static int logged;
+  if (logged++ < 20)
+    fprintf(stderr, "[I2SYM] %s indisponivel neste build (rva-ref 0x%lx ignorado)\n",
+            name, ref_rva);
+  return (uintptr_t)ter_i2sym_missing;
+}
+
 /* ---- probe MemoryManager do libunity (RE: GetMemoryManager=0x3cbe2c) ----
  * gMemoryManager (bss)  vaddr 0x1292B48; cursor da arena estatica vaddr 0x11EF4D0;
  * data segment vaddr 0x11e6000. Detecta corrupcao do singleton entre fases. */
 static void mm_probe(const char *tag) {
   if (!g_unity_data) return;
+  /* offsets do data segment sao do build de referencia; num build menor a
+   * leitura cairia fora do mapeamento */
+  if (!ter_known_build()) return;
   void *mm  = *(void **)(g_unity_data + (0x1292B48 - 0x11e6000));
   void *cur = *(void **)(g_unity_data + (0x11EF4D0 - 0x11e6000));
   fprintf(stderr, "[MM:%s] gMemoryManager=%p cursor-arena=%p\n", tag, mm, cur);
@@ -4491,6 +4583,7 @@ int main(int argc, char **argv) {
   patch_got("dladdr", (void *)my_dladdr);
   /* engine checa existência dos arquivos de dados antes de abrir */
   patch_got("open", (void *)my_open);
+  patch_got("close", (void *)my_close);
   patch_got("fopen", (void *)my_fopen);
   patch_got("stat", (void *)my_stat);
   patch_got("lstat", (void *)my_lstat);
@@ -4546,11 +4639,22 @@ int main(int argc, char **argv) {
    * Esse bloco SÓ é alcançável por esse branch. NOP -> sempre segue o caminho de sucesso
    * (dados já estão em bin/Data, lidos via AssetManager). */
   if (!getenv("TER_NOSTORAGEPATCH")) {
-    extern void so_make_text_writable(void), so_make_text_executable(void);
-    so_make_text_writable();
-    *(uint32_t *)((uintptr_t)text_base + 0x2d8fac) = 0xd503201fu; /* NOP */
-    so_make_text_executable(); so_flush_caches();
-    fprintf(stderr, "[TER] storage-check 0x2d8fac (tbz->dialog) NOPado\n");
+    /* Assinatura obrigatoria: o alvo tem de ser o proprio `tbz w0,...` do RE.
+     * Num build diferente o RVA aponta para outra instrucao — NOPar as cegas
+     * seria corromper codigo arbitrario; nesse caso o pior efeito de pular o
+     * patch e o dialogo de storage reaparecer. */
+    uint32_t insn = *(const uint32_t *)((uintptr_t)text_base + 0x2d8fac);
+    if (((insn >> 24) & 0x7Fu) == 0x36u) {
+      extern void so_make_text_writable(void), so_make_text_executable(void);
+      so_make_text_writable();
+      *(uint32_t *)((uintptr_t)text_base + 0x2d8fac) = 0xd503201fu; /* NOP */
+      so_make_text_executable(); so_flush_caches();
+      fprintf(stderr, "[TER] storage-check 0x2d8fac (tbz->dialog) NOPado\n");
+    } else {
+      fprintf(stderr,
+              "[TER] storage-check pulado: 0x2d8fac nao e tbz neste build "
+              "(opcode=%08x)\n", insn);
+    }
   }
 
   /* O FIX REAL do null-deref do Enlighten é o `memalign` (acima, deixou de ser stub).
@@ -4695,7 +4799,12 @@ int main(int argc, char **argv) {
   /* TER_AUDIOSPY/TER_STREAMFALLBACK: hook do createSound (libunity 0x806cb4).
      SPY loga result de cada som; STREAMFALLBACK refaz streams falhos como sample.
      Instalado aqui (contexto libunity, text_base=libunity, ANTES do F1/il2cpp). */
-  if (getenv("TER_AUDIOSPY") || getenv("TER_STREAMFALLBACK")) {
+  if ((getenv("TER_AUDIOSPY") || getenv("TER_STREAMFALLBACK")) &&
+      !ter_known_build()) {
+    fprintf(stderr,
+            "[CSSPY] hook createSound requer o build de referencia; "
+            "stream-fallback de audio desativado neste build\n");
+  } else if (getenv("TER_AUDIOSPY") || getenv("TER_STREAMFALLBACK")) {
     g_stream_fallback = getenv("TER_STREAMFALLBACK") ? 1 : 0;
     void *tr = mk_tramp((uintptr_t)text_base + 0x806cb4, "createSound");
     if (tr) {
@@ -4837,6 +4946,7 @@ int main(int argc, char **argv) {
     /* il2cpp abre o global-metadata.dat via open() -> intercepta p/ redirecionar.
        patch_got opera no modulo ATIVO (=il2cpp agora). Tb dlopen/dlsym/log. */
     patch_got("open", (void *)my_open);
+    patch_got("close", (void *)my_close);
     patch_got("mmap", (void *)my_mmap);
     patch_got("mmap64", (void *)my_mmap);
     /* sigaction do libil2cpp (o GC instala SIGPWR/SIGXCPU por aqui). Sem patch, o GC
@@ -4924,9 +5034,13 @@ int main(int argc, char **argv) {
     }
     if (getenv("CUP_STAGESPY")) stagespy_install(g_il2cpp_base);
     if (!ter_install_game_exit_hook()) {
+      /* Build desconhecido (ou assinatura divergente): sem a ponte, o botao
+       * Quit Game do menu volta a ser um no-op do stub Android, mas
+       * SELECT+START e SDL_QUIT continuam saindo pelo teardown guardado.
+       * Melhor rodar degradado do que recusar o jogo inteiro. */
       fprintf(stderr,
-              "[QUIT] recusando executar sem a ponte Game.Exit validada\n");
-      _exit(76);
+              "[QUIT] ponte Game.Exit indisponivel neste build; "
+              "saida garantida apenas por SELECT+START\n");
     }
     so_finalize(); so_flush_caches();
     fprintf(stderr, "[F1] libil2cpp init_array...\n");
@@ -5136,7 +5250,7 @@ int main(int argc, char **argv) {
      heap NÃO crescer indefinido (parado no disclaimer = OOM/thrash). 0 = nunca religa. */
   int gcon_f = getenv("CUP_GCON_F") ? atoi(getenv("CUP_GCON_F")) : 350;
   if (gcoff) {
-    ((void (*)(void))(g_il2cpp_base + 0x73ca6c))();  /* il2cpp_gc_disable */
+    ((void (*)(void))(ter_i2sym("il2cpp_gc_disable", 0x73ca6c)))();  /* il2cpp_gc_disable */
     fprintf(stderr, "[GCOFF] il2cpp_gc_disable() no boot; religa GC no frame %d\n", gcon_f);
   }
   /* TER_NOGCWAIT: o muro do frame 2 = il2cpp GC stop-the-world (WaitForThreadsToSuspend
@@ -5306,7 +5420,7 @@ int main(int argc, char **argv) {
         gc_pending = 0; gc_idle = 0;
         fprintf(stderr, "[GCEVERY] limpeza f=%d (mgr %s)\n", f, m ? "ocioso" : "n/d");
         ((void *(*)(void))(g_il2cpp_base + 0x178BAAC))(); /* Resources.UnloadUnusedAssets */
-        ((void (*)(void))(g_il2cpp_base + 0x73ca5c))();  /* il2cpp_gc_collect */
+        ((void (*)(void))(ter_i2sym("il2cpp_gc_collect", 0x73ca5c)))();  /* il2cpp_gc_collect */
       }
     }
     { /* log de hits do SCENESKIP + MASKGUARD + NULLGUARD */
@@ -5330,8 +5444,8 @@ int main(int argc, char **argv) {
       }
     }
     if (gcoff && gcon_f > 0 && f == gcon_f) {
-      ((void (*)(void))(g_il2cpp_base + 0x73ca68))();  /* il2cpp_gc_enable */
-      ((void (*)(void))(g_il2cpp_base + 0x73ca5c))();  /* il2cpp_gc_collect */
+      ((void (*)(void))(ter_i2sym("il2cpp_gc_enable", 0x73ca68)))();  /* il2cpp_gc_enable */
+      ((void (*)(void))(ter_i2sym("il2cpp_gc_collect", 0x73ca5c)))();  /* il2cpp_gc_collect */
       fprintf(stderr, "[GCOFF] GC RELIGADO + collect no frame %d (boot ja passou)\n", f);
       fflush(stderr);
     }
@@ -5426,7 +5540,10 @@ int main(int argc, char **argv) {
   struct sigaction sx; memset(&sx, 0, sizeof(sx));
   sx.sa_handler = ter_shutdown_timeout; sigemptyset(&sx.sa_mask);
   sigaction(SIGALRM, &sx, NULL);
-  alarm(5);
+  /* 15s (era 5): num SD lento, nativePause carrega o save final; 5s matava o
+   * jogo NO MEIO da escrita do .wld/.map. O handler agora faz sync(), mas o
+   * caminho certo e deixar o save terminar e sair pelo sync() daqui de baixo. */
+  alarm(15);
   if ((fn = jni_find_native("nativeFocusChanged")))
     ((void (*)(void *, void *, int))fn)(env, &thiz, 0);
   if ((fn = jni_find_native("nativePause")))

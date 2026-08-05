@@ -82,8 +82,10 @@ required. Both paths return to the frontend.
 ### Common problems
 
 - APK not found: check for a `.apk` file in `terraria/gamedata/`.
-- Incompatible version: use exactly `1.4.5.6.4`; renaming another APK does not
-  change its hashes.
+- Incompatible version: use `1.4.5.6.4`. Any Play Store build of that version
+  is accepted (single APK, splits, or an AntiSplit-M merge) as long as it
+  carries the arm64-v8a libraries; renaming an APK of another version does
+  not make it compatible.
 - Low storage: free space on the port filesystem; setup uses a temporary stage
   plus a 256 MiB safety margin.
 - Boot failure: read `terraria/run.log` and `terraria/nxextract.log`, but review

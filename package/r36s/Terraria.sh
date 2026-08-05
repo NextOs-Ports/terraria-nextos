@@ -68,14 +68,35 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 72
 fi
 
-printf '[launcher] validating owner-supplied Android data with NXExtract 1.2.0\n'
+kill_stray_setup_ui() {
+  # Kill only a setup UI that belongs to THIS game directory (matched by its
+  # cwd, never by bare process name), so a failed run can never leave a
+  # fullscreen UI holding the display, the input grabs and the VT behind us.
+  local proc cwd pid
+  for proc in /proc/[0-9]*; do
+    [[ -d $proc ]] || continue
+    cwd=$(readlink "$proc/cwd" 2>/dev/null) || continue
+    [[ $cwd == "$GAMEDIR"/.nxextract/* ]] || continue
+    [[ $(cat "$proc/comm" 2>/dev/null) == nxextract-ui ]] || continue
+    pid=${proc##*/}
+    printf '[launcher] terminating stray setup UI pid=%s\n' "$pid"
+    kill -TERM "$pid" 2>/dev/null || true
+    sleep 1
+    kill -KILL "$pid" 2>/dev/null || true
+  done
+}
+
+printf '[launcher] validating owner-supplied Android data with NXExtract 1.2.2\n'
 bash "$GAMEDIR/run-extractor.sh" || {
   status=$?
   printf '[launcher] ERROR: owner-data setup failed (status=%d)\n' "$status"
+  kill_stray_setup_ui
+  $ESUDO chmod 666 "$CUR_TTY" 2>/dev/null || true
   printf '\033c' >> "$CUR_TTY" 2>/dev/null || true
   declare -F pm_finish >/dev/null 2>&1 && pm_finish
   exit "$status"
 }
+kill_stray_setup_ui
 
 missing=()
 for relative in libunity.so libil2cpp.so libc++_shared.so \
