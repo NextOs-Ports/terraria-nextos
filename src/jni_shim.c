@@ -2073,11 +2073,16 @@ static void *jni_choreographer_driver(void *argument) {
   uintptr_t il2cpp = ter_il2cpp_base();
   void *domain = NULL, *thread = NULL;
   if (il2cpp) {
-    void *(*domain_get)(void) = (void *(*)(void))(il2cpp + 0x73c860);
+    /* por NOME (multi-build): RVA cru 0x73c860/0x73ccb4 só vale no build de
+       referência — no Play 301544 os exports ficam em 0x7e9xxx e o salto cego
+       era o SIGSEGV do boot (pc=il2cpp+0x73ccf4, lr nesta thread). */
+    extern uintptr_t ter_i2sym_pub(const char *, unsigned long);
+    void *(*domain_get)(void) =
+        (void *(*)(void))ter_i2sym_pub("il2cpp_domain_get", 0x73c860);
     void *(*thread_attach)(void *) =
-        (void *(*)(void *))(il2cpp + 0x73ccb4);
+        (void *(*)(void *))ter_i2sym_pub("il2cpp_thread_attach", 0x73ccb4);
     domain = domain_get();
-    thread = thread_attach(domain);
+    if (domain) thread = thread_attach(domain);
   }
   debugPrintf("jni_shim: UnityChoreographer HandlerThread active "
               "(il2cpp domain=%p thread=%p)\n", domain, thread);

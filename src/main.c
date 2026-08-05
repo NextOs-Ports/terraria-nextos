@@ -991,6 +991,25 @@ static int my_fstat64(int fd, struct stat64 *st) {
             fd, r, r == 0 ? (long long)st->st_size : -1LL), fsync(2);
   return r;
 }
+/* builds mais novos (NDK novo) importam `fstat` direto — símbolo que a glibc só
+   exporta a partir da 2.33; sem shim o slot fica UNRESOLVED (lixo) e o primeiro
+   fstat do init da Unity vira SIGSEGV (visto no build Play 301544). Em aarch64
+   struct stat == struct stat64, então delega no fstat64 do host. */
+static int my_fstat(int fd, void *st) {
+  return fstat64(fd, (struct stat64 *)st);
+}
+/* DNS desligado no so-loader: devolve EAI_NONAME (8, valor bionic) com *res
+   NULL — nunca "sucesso" sem resultado (ver comentário no set_import). */
+static int my_getaddrinfo(const char *node, const char *svc, const void *hints,
+                          void **res) {
+  (void)svc; (void)hints;
+  if (res) *res = NULL;
+  static int n;
+  if (n++ < 4)
+    fprintf(stderr, "[NET] getaddrinfo('%s') -> EAI_NONAME (DNS off)\n",
+            node ? node : "?");
+  return 8;
+}
 static void *my_mmap64(void *a, size_t len, int prot, int fl, int fd, off64_t off) {
   void *r = mmap64(a, len, prot, fl, fd, off);
   if (g_guidlog && fd == g_guid_fd)
@@ -2725,7 +2744,7 @@ void *ter_static_obj(const char *ns, const char *cn, const char *fn) {
   void *(*asm_img)(const void*) = (void*)(ter_i2sym("il2cpp_assembly_get_image", 0x73c22c));
   void *(*cls_from_name)(void*, const char*, const char*) = (void*)(ter_i2sym("il2cpp_class_from_name", 0x73c264));
   void *(*getf)(void*, const char*) = (void*)(ter_i2sym("il2cpp_class_get_field_from_name", 0x73c284));
-  void (*sget)(void*,void*)=(void*)(g_il2cpp_base+0x73ca44);
+  void (*sget)(void*,void*)=(void*)(ter_i2sym("il2cpp_field_static_get_value", 0x73ca44));
   void *domain = dom_get(); if (!domain) return NULL;
   size_t na=0; const void **as = dom_asms(domain, &na); if (!as) return NULL;
   for (size_t i=0; i<na; i++) {
@@ -3176,6 +3195,11 @@ static so_module *g_m_unity = NULL, *g_m_il2cpp = NULL;
  * fallback; num build desconhecido sem o simbolo, devolve um stub que retorna
  * NULL para o caller degradar em silencio em vez de saltar para lixo. */
 static long ter_i2sym_missing(void) { return 0; }
+static uintptr_t ter_i2sym(const char *name, unsigned long ref_rva);
+/* export p/ native_pad.c — mesma política nome-primeiro/fallback-gateado */
+uintptr_t ter_i2sym_pub(const char *name, unsigned long ref_rva) {
+  return ter_i2sym(name, ref_rva);
+}
 static uintptr_t ter_i2sym(const char *name, unsigned long ref_rva) {
   if (g_m_il2cpp) {
     so_module *current = so_save();
@@ -4484,12 +4508,22 @@ static void *fmod_audio_thread(void *arg) {
      expõe p/ o Java montar o AudioTrack. Tipos: 0=SAMPLERATE, 1=blockSize(frames), 4=CHANNELS.
      RAIZ DO ÁUDIO RÁPIDO: o FMOD mixa a **24000 Hz** (mobile), mas o SDL estava a 44100 →
      44100/24000 = 1.84× acelerado. FIX = abrir o SDL na taxa/canais REAIS do fmodGetInfo. */
-  { int (*fgi)(void*, void*, int) = (void *)(g_unity_base + 0x8112b0);
-    for (int it = 0; it < 5; it++)
-      fprintf(stderr, "[AUDIO] fmodGetInfo(%d) = %d\n", it, fgi(g_fmod_env, &fdev, it));
-    int r0 = fgi(g_fmod_env, &fdev, 0), c4 = fgi(g_fmod_env, &fdev, 4);
-    if (r0 >= 8000 && r0 <= 192000) rate = (unsigned)r0;     /* taxa real do mixer FMOD */
-    if (c4 == 1 || c4 == 2) ch = (unsigned)c4;               /* canais reais */
+  { /* resolve por NOME (RegisterNatives), como o fmodProcess — vale p/ qualquer
+       build; o RVA 0x8112b0 só é confiável no build de referência (no 301544
+       esse endereço cai no meio de outra função -> SIGSEGV, fault=bytes de string). */
+    int (*fgi)(void*, void*, int) = (int (*)(void*, void*, int))jni_find_native("fmodGetInfo");
+    if (!fgi && ter_known_build())
+      fgi = (int (*)(void*, void*, int))(g_unity_base + 0x8112b0);
+    if (fgi) {
+      for (int it = 0; it < 5; it++)
+        fprintf(stderr, "[AUDIO] fmodGetInfo(%d) = %d\n", it, fgi(g_fmod_env, &fdev, it));
+      int r0 = fgi(g_fmod_env, &fdev, 0), c4 = fgi(g_fmod_env, &fdev, 4);
+      if (r0 >= 8000 && r0 <= 192000) rate = (unsigned)r0;   /* taxa real do mixer FMOD */
+      if (c4 == 1 || c4 == 2) ch = (unsigned)c4;             /* canais reais */
+    } else {
+      fprintf(stderr, "[AUDIO] fmodGetInfo indisponivel neste build; "
+                      "mantendo rate=%u ch=%u (override: TER_AUDIO_RATE/TER_AUDIO_CH)\n", rate, ch);
+    }
   }
   if (getenv("TER_AUDIO_RATE")) rate = atoi(getenv("TER_AUDIO_RATE"));
   if (getenv("TER_AUDIO_CH"))   ch   = atoi(getenv("TER_AUDIO_CH"));
@@ -4643,6 +4677,13 @@ int main(int argc, char **argv) {
   g_guidlog = getenv("TER_GUIDLOG") ? 1 : 0;
   set_import("mmap", (void *)my_mmap);
   set_import("mmap64", (void *)my_mmap);
+  /* getaddrinfo: o stub gerado retorna 0 (=SUCESSO) sem preencher *res -> o
+     perf-reporter do build Play 301544 lia um addrinfo de lixo de stack e
+     morria em strlen (lr=unity+0x7b8814). Passthrough pro glibc também não
+     serve: o layout bionic troca ai_addr/ai_canonname (offsets 24/32). Falha
+     limpa e o engine segue offline, igual ao comportamento do build de
+     referência. 8 = EAI_NONAME do bionic. */
+  set_import("getaddrinfo", (void *)my_getaddrinfo);
   if (g_guidlog) {
     set_import("read", (void *)my_read);
     set_import("lseek64", (void *)my_lseek64);
@@ -4746,6 +4787,7 @@ int main(int argc, char **argv) {
   patch_got("stat64", (void *)my_stat64);
   patch_got("lstat64", (void *)my_lstat64);
   patch_got("fstat64", (void *)my_fstat64);  /* incondicional: dlsym falha na glibc≥2.30 */
+  patch_got("fstat", (void *)my_fstat);      /* NDK novo importa fstat direto (glibc<2.33 nao exporta) */
   patch_got("access", (void *)my_access);
   patch_got("statfs64", (void *)my_statfs64);
   patch_got("statfs", (void *)my_statfs64);
@@ -5115,6 +5157,8 @@ int main(int argc, char **argv) {
     patch_got("lstat", (void *)my_lstat);
     patch_got("stat64", (void *)my_stat64);
     patch_got("lstat64", (void *)my_lstat64);
+    patch_got("fstat64", (void *)my_fstat64);
+    patch_got("fstat", (void *)my_fstat);  /* NDK novo importa fstat direto */
     patch_got("access", (void *)my_access);
   patch_got("statfs64", (void *)my_statfs64);
   patch_got("statfs", (void *)my_statfs64);

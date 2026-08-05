@@ -45,8 +45,11 @@ extern void *ter_static_obj(const char *ns, const char *cn, const char *fn);
 extern int ter_vkbd_blocking(void);   /* teclado na tela aberto: jogo não deve ver input */
 extern void ter_request_quit(void);
 
-/* ---- il2cpp API (exports em RVA fixo, confirmados no readelf do libil2cpp.so) ---- */
-#define IL2(fn, rva) (*(fn)(uintptr_t)(g_il2cpp_base + (rva)))
+/* ---- il2cpp API: resolvida pelo NOME no dynsym (multi-build). Os RVAs do
+ * build de referencia ficam so' como fallback dentro de ter_i2sym_pub (gateado
+ * por known-build). Usar base+RVA cru aqui derrubava builds da Play com layout
+ * diferente (301544: exports em 0x7e9xxx, nao 0x73cxxx -> SIGSEGV no boot). ---- */
+extern uintptr_t ter_i2sym_pub(const char *name, unsigned long ref_rva);
 typedef void *(*f_dom_get)(void);
 typedef const void **(*f_dom_asms)(void *, size_t *);
 typedef void *(*f_asm_img)(const void *);
@@ -57,16 +60,21 @@ typedef void *(*f_array_new)(void *, size_t);
 typedef unsigned (*f_gch_new)(void *, int);
 typedef void *(*f_obj_new)(void *);
 typedef void *(*f_rt_invoke)(void *, void *, void **, void **);
-#define NP_dom_get       ((f_dom_get)(g_il2cpp_base + 0x73c860))
-#define NP_dom_asms      ((f_dom_asms)(g_il2cpp_base + 0x73c86c))
-#define NP_asm_img       ((f_asm_img)(g_il2cpp_base + 0x73c22c))
-#define NP_cls_from_name ((f_cls_from_name)(g_il2cpp_base + 0x73c264))
-#define NP_cls_method    ((f_cls_method)(g_il2cpp_base + 0x73c28c))
-#define NP_string_new    ((f_string_new)(g_il2cpp_base + 0x73cc98))
-#define NP_array_new     ((f_array_new)(g_il2cpp_base + 0x73c214))
-#define NP_gch_new       ((f_gch_new)(g_il2cpp_base + 0x73cac8))
-#define NP_obj_new       ((f_obj_new)(g_il2cpp_base + 0x73cc34))
-#define NP_rt_invoke     ((f_rt_invoke)(g_il2cpp_base + 0x73cc7c))
+static uintptr_t np_sym(int slot, const char *name, unsigned long ref_rva) {
+  static uintptr_t cache[10];
+  if (!cache[slot]) cache[slot] = ter_i2sym_pub(name, ref_rva);
+  return cache[slot];
+}
+#define NP_dom_get       ((f_dom_get)np_sym(0, "il2cpp_domain_get", 0x73c860))
+#define NP_dom_asms      ((f_dom_asms)np_sym(1, "il2cpp_domain_get_assemblies", 0x73c86c))
+#define NP_asm_img       ((f_asm_img)np_sym(2, "il2cpp_assembly_get_image", 0x73c22c))
+#define NP_cls_from_name ((f_cls_from_name)np_sym(3, "il2cpp_class_from_name", 0x73c264))
+#define NP_cls_method    ((f_cls_method)np_sym(4, "il2cpp_class_get_method_from_name", 0x73c28c))
+#define NP_string_new    ((f_string_new)np_sym(5, "il2cpp_string_new", 0x73cc98))
+#define NP_array_new     ((f_array_new)np_sym(6, "il2cpp_array_new", 0x73c214))
+#define NP_gch_new       ((f_gch_new)np_sym(7, "il2cpp_gchandle_new", 0x73cac8))
+#define NP_obj_new       ((f_obj_new)np_sym(8, "il2cpp_object_new", 0x73cc34))
+#define NP_rt_invoke     ((f_rt_invoke)np_sym(9, "il2cpp_runtime_invoke", 0x73cc7c))
 
 static int np_log;
 
