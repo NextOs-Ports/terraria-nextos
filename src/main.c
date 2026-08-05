@@ -73,6 +73,9 @@ __attribute__((aligned(16))) static _Thread_local char g_bionic_guard_pad[256] =
 /* fsync(stderr→debug.log): garante que o log sobrevive a hang/power-cycle */
 static void dbg_sync(void) { fsync(2); }
 
+/* offsets de diagnostico do mapa (LocalUserGameState) */
+size_t g_mapdiag_off[10];
+
 /* ---- build identity ----
  * O NXExtract aceita qualquer build estruturalmente valido da 1.4.5.6.4 (a
  * Play Store publica versionCodes diferentes da mesma versao). O manifest
@@ -2966,6 +2969,17 @@ static void ter_map_controls(void) {
       failed = 1; return;
     }
     off_full = fld_off(f_full); off_scale = fld_off(f_scale); off_pos = fld_off(f_pos);
+    /* diagnostico do "mapa pisca e nao abre": snapshot do estado de carga */
+    {
+      static const char *dn[] = { "mapEnabled", "mapReady", "mapInit", "loadMap",
+                                  "updateMap", "refreshMap", "clearMap", "mapDelay",
+                                  "mapStyle", "resetMapFull", NULL };
+      extern size_t g_mapdiag_off[10];
+      for (int k = 0; dn[k]; k++) {
+        void *f = cls_field(cls_gs, dn[k]);
+        g_mapdiag_off[k] = f ? fld_off(f) : 0;
+      }
+    }
     ready = 1;
     fprintf(stderr, "[MAPCTL] mapa fullscreen: zoom LT/RT + pan stick direito "
             "(LocalUserGameState off full=0x%zx scale=0x%zx pos=0x%zx)\n",
@@ -3006,14 +3020,37 @@ static void ter_map_controls(void) {
   }
   void *gs = *(void **)((char *)user + off_gamestate);
   if (!gs) return;
+  /* [MAPDIAG] borda do mapFullscreen + aperto de SELECT: por que fecha? */
+  {
+    extern size_t g_mapdiag_off[10];
+    extern int np_btn_down(int b);
+    static unsigned char last_full = 0xff;
+    unsigned char now_full = *(unsigned char *)((char *)gs + off_full);
+    int sel = np_btn_down(6);
+    if (now_full != last_full || sel) {
+      static const char *dn[] = { "mapEnabled", "mapReady", "mapInit", "loadMap",
+                                  "updateMap", "refreshMap", "clearMap", "mapDelay",
+                                  "mapStyle", "resetMapFull" };
+      char line[512]; int len = 0;
+      len += snprintf(line + len, sizeof line - len,
+                      "[MAPDIAG] f=%d %s full=%d", g_render_frame,
+                      sel ? "SELECT" : "edge", now_full);
+      for (int k = 0; k < 10; k++)
+        if (g_mapdiag_off[k])
+          len += snprintf(line + len, sizeof line - len, " %s=%d", dn[k],
+                          *(int32_t *)((char *)gs + g_mapdiag_off[k]));
+      fprintf(stderr, "%s\n", line); fsync(2);
+      last_full = now_full;
+    }
+  }
   if (!*(unsigned char *)((char *)gs + off_full)) return; /* mapa fechado */
   float *scale = (float *)((char *)gs + off_scale);
   float *pos = (float *)((char *)gs + off_pos);
   float lt = np_axis(4), rt = np_axis(5);
   if (lt > 0.25f || rt > 0.25f) {
     float s = *scale;
-    if (rt > 0.25f) s *= 1.0f + 0.045f * rt;
-    if (lt > 0.25f) s /= 1.0f + 0.045f * lt;
+    if (rt > 0.25f) s *= 1.0f + 0.028f * rt;
+    if (lt > 0.25f) s /= 1.0f + 0.028f * lt;
     if (s < 0.2f) s = 0.2f;
     if (s > 16.0f) s = 16.0f;
     *scale = s;
