@@ -272,6 +272,7 @@ void np_check_exit_hotkey(void) {
 static unsigned char g_npb_prev[NPB_COUNT];
 int np_btn(int b)      { return (b >= 0 && b < NPB_COUNT) ? g_npb[b] : 0; }
 int np_btn_down(int b) { return (b >= 0 && b < NPB_COUNT) ? (g_npb[b] && !g_npb_prev[b]) : 0; }
+float np_axis(int a)   { return (a >= 0 && a < NPA_COUNT) ? g_npa[a] : 0.0f; }
 
 /* histograma de consultas (revela o mapeamento do profile) */
 static unsigned np_qbtn[20], np_qax[20];

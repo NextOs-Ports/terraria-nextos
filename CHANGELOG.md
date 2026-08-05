@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.1 (test build)
+
+- Gave the fullscreen map real controller support. The mobile build only ever
+  zoomed the map by touch pinch (`GUIZoom.UpdatePinchZoom`) and its zoom
+  buttons are touch UI that the game hides while a controller is active, so on
+  a handheld the map opened but could not be zoomed. The loader now drives
+  `Main.mapFullscreenScale` and `Main.mapFullscreenPos` directly: `LT`/`RT`
+  zoom out/in and the right stick pans. The fields are resolved by name
+  through the IL2CPP API, so this works on any accepted build. Disable with
+  `TER_NOMAPCTL=1`.
+
 ## 1.1.0 (test build)
 
 - Accept every structurally sound Play Store build of Terraria 1.4.5.6.4, not

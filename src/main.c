@@ -2908,6 +2908,73 @@ static void ter_name_pump(void) {
     }
   }
 }
+/* 🗺️ Mapa fullscreen do build mobile: o zoom nativo é SÓ pinça de toque
+ * (GUIZoom.UpdatePinchZoom) e os botões de zoom são UI de toque, escondida em
+ * modo controle; GUIControllerFullScreenMap só navega. Sem toque no so-loader,
+ * dirigimos os campos estáticos Main.mapFullscreenScale/Pos direto: LT/RT =
+ * zoom, stick direito = pan. Tudo resolvido POR NOME via API il2cpp (nenhum
+ * RVA: funciona em qualquer build). Desativa com TER_NOMAPCTL=1. */
+extern float np_axis(int a);
+static void ter_map_controls(void) {
+  static int failed, ready;
+  static void *fld_full, *fld_scale, *fld_pos;
+  static void (*f_sget)(void *, void *), (*f_sset)(void *, void *);
+  if (failed || getenv("TER_NOMAPCTL") || !g_il2cpp_base) return;
+  if (!ready) {
+    static int tries;
+    if (tries++ > 900) { failed = 1; return; }
+    void *(*dom_get)(void) = (void *)ter_i2sym("il2cpp_domain_get", 0x73c860);
+    const void **(*dom_asms)(void *, size_t *) =
+        (void *)ter_i2sym("il2cpp_domain_get_assemblies", 0x73c86c);
+    void *(*asm_img)(const void *) =
+        (void *)ter_i2sym("il2cpp_assembly_get_image", 0x73c22c);
+    void *(*cls_from_name)(void *, const char *, const char *) =
+        (void *)ter_i2sym("il2cpp_class_from_name", 0x73c264);
+    void *(*cls_field)(void *, const char *) =
+        (void *)ter_i2sym("il2cpp_class_get_field_from_name", 0x73c284);
+    f_sget = (void *)ter_i2sym("il2cpp_field_static_get_value", 0x73ca44);
+    f_sset = (void *)ter_i2sym("il2cpp_field_static_set_value", 0x73ca48);
+    void *domain = dom_get(); if (!domain) return;
+    size_t na = 0; const void **asms = dom_asms(domain, &na);
+    if (!asms || !na) return;
+    for (size_t i = 0; i < na && !fld_full; i++) {
+      void *img = asm_img(asms[i]); if (!img) continue;
+      void *cls = cls_from_name(img, "Terraria", "Main"); if (!cls) continue;
+      fld_full  = cls_field(cls, "mapFullscreen");
+      fld_scale = cls_field(cls, "mapFullscreenScale");
+      fld_pos   = cls_field(cls, "mapFullscreenPos");
+    }
+    if (!fld_full || !fld_scale || !fld_pos) return;
+    ready = 1;
+    fprintf(stderr, "[MAPCTL] mapa fullscreen: zoom LT/RT + pan stick direito "
+            "(campos Main.* por nome)\n");
+    fsync(2);
+  }
+  unsigned char fullscreen = 0;
+  f_sget(fld_full, &fullscreen);
+  if (!fullscreen) return;
+  float lt = np_axis(4), rt = np_axis(5);
+  if (lt > 0.25f || rt > 0.25f) {
+    float scale = 1.0f;
+    f_sget(fld_scale, &scale);
+    if (rt > 0.25f) scale *= 1.0f + 0.045f * rt;
+    if (lt > 0.25f) scale /= 1.0f + 0.045f * lt;
+    if (scale < 0.2f) scale = 0.2f;
+    if (scale > 16.0f) scale = 16.0f;
+    f_sset(fld_scale, &scale);
+  }
+  float rx = np_axis(2), ry = np_axis(3);
+  if (rx > 0.3f || rx < -0.3f || ry > 0.3f || ry < -0.3f) {
+    float scale = 1.0f, pos[2] = {0, 0};
+    f_sget(fld_scale, &scale);
+    if (scale < 0.2f) scale = 0.2f;
+    f_sget(fld_pos, pos);
+    pos[0] += rx * 10.0f / scale;
+    pos[1] += ry * 10.0f / scale;
+    f_sset(fld_pos, pos);
+  }
+}
+
 void ter_before_present(void) {
   ter_nuke_methods();   /* TER_NUKEKB: neutraliza KeyboardInput.Update (lazy, até achar) */
   ter_fix_singleplayer(); /* TER_FIXSP: neutraliza OldSaveSynchronise.CopyOldSaves (tela preta SP) */
@@ -2917,6 +2984,7 @@ void ter_before_present(void) {
      menu/bolsa/gameplay/glifos 100% nativos. */
   ter_name_pump();  /* autoname/vkbd (independe do sistema de controle) */
   { extern void np_frame(void); np_frame(); }  /* 🎮 NATPAD: controle NATIVO via InControl attach */
+  ter_map_controls(); /* 🗺️ mapa fullscreen: zoom LT/RT + pan stick direito */
   rs_present();   /* upscale do FBO lo-res p/ a tela real ANTES do swap */
   ter_vkbd_draw();
   ter_screenshot_maybe();
