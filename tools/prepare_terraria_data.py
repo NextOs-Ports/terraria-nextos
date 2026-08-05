@@ -80,18 +80,27 @@ def check_elf_aarch64(path: Path, label: str) -> None:
 
 
 def find_unity_version(libunity: Path) -> str:
+    # libunity.so carries more than one version-shaped string: besides the
+    # real engine version (repeated several times), Unity embeds historical
+    # constants such as "2018.3.0a1" in its serialization compatibility
+    # tables, and those can sit at a lower file offset than the real one.
+    # Taking the first match by offset rejected every legitimate build, so
+    # collect all matches and pick the engine version by frequency.
     with libunity.open("rb") as stream:
         blob = stream.read()
-    match = UNITY_VERSION_PATTERN.search(blob)
-    if not match:
+    counts: dict[bytes, int] = {}
+    for match in UNITY_VERSION_PATTERN.finditer(blob):
+        counts[match.group(0)] = counts.get(match.group(0), 0) + 1
+    if not counts:
         raise RuntimeError("libunity.so carries no Unity version string")
-    version = match.group(0)
-    if not version.startswith(SUPPORTED_UNITY_PREFIX):
+    supported = [v for v in counts if v.startswith(SUPPORTED_UNITY_PREFIX)]
+    if not supported:
+        seen = ", ".join(sorted(v.decode("ascii", "replace") for v in counts))
         raise RuntimeError(
-            "unsupported Unity engine %s; this port targets Unity 2021.3 builds "
-            "of Terraria 1.4.5.6.4" % version.decode("ascii", "replace")
+            "unsupported Unity engine (found %s); this port targets Unity "
+            "2021.3 builds of Terraria 1.4.5.6.4" % seen
         )
-    return version.decode("ascii")
+    return max(supported, key=lambda v: counts[v]).decode("ascii")
 
 
 def check_magic(path: Path, magic: bytes, label: str) -> None:
