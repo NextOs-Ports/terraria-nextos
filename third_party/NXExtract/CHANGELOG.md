@@ -4,6 +4,21 @@ All notable NXExtract changes are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 1.2.2
+
+- Guarantee the fullscreen setup UI can never outlive a failed run and leave
+  the device unable to shut down cleanly. The UI now installs SIGTERM/SIGINT/
+  SIGHUP handlers that exit through the normal SDL teardown (restoring the VT,
+  DRM master and evdev grabs), asks the kernel for SIGTERM on parent death
+  (`PR_SET_PDEATHSIG`), notices an orphaned state via `getppid()`, and honors
+  a wall-clock deadline (`NXEXTRACT_UI_MAX_SECONDS`, default 3600 s).
+- Keep the parent's UI kill ladder running even when the polite stop file
+  cannot be written — a full SD card is exactly the state a failed install is
+  most likely in. The final `SIGKILL` wait is also bounded now.
+- Convert SIGTERM/SIGINT/SIGHUP delivered to the extractor into a normal
+  error return so the UI teardown and the workspace lock release always run,
+  including when a launcher or CFW shutdown script times the extractor out.
+
 ## 1.2.1
 
 - Never fail an install because the scratch source cache could not be deleted.

@@ -14,13 +14,18 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <dlfcn.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
 
 typedef struct SDL_Window SDL_Window;
 typedef struct SDL_Renderer SDL_Renderer;
@@ -817,6 +822,59 @@ static void note_video_failure(int inherited_mode, int *fallback_mode,
         select_next_video_candidate(candidates, fallback_attempts);
 }
 
+/* The extractor asks this process to exit by creating the stop file. That
+ * contract breaks when the parent dies first (OOM kill, CFW teardown) or when
+ * the card is too full to create the file — the two states a failed install is
+ * most likely to be in. Without an escape hatch the UI then loops forever
+ * holding DRM master, the evdev grabs and the VT in graphics mode, and the
+ * device cannot draw its shutdown screen. Signals, parent death and a
+ * wall-clock deadline all funnel into the same SDL teardown as the stop file.
+ */
+static volatile sig_atomic_t g_quit_requested;
+
+static void handle_quit_signal(int signum) {
+  (void)signum;
+  g_quit_requested = 1;
+}
+
+static void install_quit_guards(void) {
+  struct sigaction action;
+  memset(&action, 0, sizeof(action));
+  action.sa_handler = handle_quit_signal;
+  sigaction(SIGTERM, &action, NULL);
+  sigaction(SIGINT, &action, NULL);
+  sigaction(SIGHUP, &action, NULL);
+#if defined(__linux__) && defined(PR_SET_PDEATHSIG)
+  prctl(PR_SET_PDEATHSIG, SIGTERM);
+#endif
+}
+
+static time_t g_deadline;
+
+static void arm_ui_deadline(void) {
+  const char *raw = getenv("NXEXTRACT_UI_MAX_SECONDS");
+  long limit = raw && *raw ? strtol(raw, NULL, 10) : 0;
+  if (limit <= 0)
+    limit = 3600;
+  g_deadline = time(NULL) + limit;
+}
+
+static int should_stop(const char *stop_path) {
+  if (g_quit_requested)
+    return 1;
+  if (path_exists(stop_path))
+    return 1;
+  if (getppid() == 1) {
+    fprintf(stderr, "nxextract-ui: parent exited; releasing display\n");
+    return 1;
+  }
+  if (time(NULL) > g_deadline) {
+    fprintf(stderr, "nxextract-ui: session deadline reached; releasing display\n");
+    return 1;
+  }
+  return 0;
+}
+
 static int create_renderer(const char *stop_path, const char *title,
                            SDL_Window **window_out,
                            SDL_Renderer **renderer_out) {
@@ -832,7 +890,7 @@ static int create_renderer(const char *stop_path, const char *title,
   collect_video_candidates(&candidates);
   for (attempt = 0; attempt < 30 && !renderer; attempt++) {
     const char *driver;
-    if (path_exists(stop_path))
+    if (should_stop(stop_path))
       return 0;
     if (attempt == 6 && inherited_mode) {
       fprintf(stderr,
@@ -914,6 +972,8 @@ int main(int argc, char **argv) {
   title = argv[3];
   version = argv[4];
   configure_session_runtime();
+  install_quit_guards();
+  arm_ui_deadline();
   if (!load_sdl())
     return 0;
   if (!create_renderer(stop_path, title, &window, &renderer)) {
@@ -924,7 +984,7 @@ int main(int argc, char **argv) {
   fprintf(stderr, "nxextract-ui: driver=%s\n",
           pSDL_GetCurrentVideoDriver() ? pSDL_GetCurrentVideoDriver() : "?");
 
-  while (!path_exists(stop_path)) {
+  while (!should_stop(stop_path)) {
     SDL_Event event;
     int width = 640, height = 480;
     while (pSDL_PollEvent(&event)) {

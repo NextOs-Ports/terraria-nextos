@@ -30,7 +30,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 
-NXEXTRACT_VERSION = "1.2.1"
+NXEXTRACT_VERSION = "1.2.2"
 FORMAT_VERSION = 1
 CHUNK_SIZE = 1024 * 1024
 DEFAULT_SAFETY_BYTES = 128 * 1024 * 1024
@@ -2523,7 +2523,14 @@ class UISession:
             return
         if delay > 0:
             time.sleep(delay)
-        atomic_write(self.stop_path, "")
+        # The stop file is the polite exit request, but on a full or wedged
+        # card this write raises — and a failed install is exactly when the
+        # card tends to be full. The signal ladder below must still run, or
+        # the fullscreen UI outlives us holding the display and input.
+        try:
+            atomic_write(self.stop_path, "")
+        except OSError as error:
+            self.logger.log("setup UI stop file not writable (%s); signaling" % error)
         try:
             self.process.wait(timeout=3)
         except subprocess.TimeoutExpired:
@@ -2532,7 +2539,13 @@ class UISession:
                 self.process.wait(timeout=1)
             except subprocess.TimeoutExpired:
                 self.process.kill()
-                self.process.wait()
+                try:
+                    self.process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.logger.log(
+                        "setup UI pid %d did not exit after SIGKILL"
+                        % self.process.pid
+                    )
         if self.log_stream:
             self.log_stream.close()
         self.process = None
@@ -2647,6 +2660,18 @@ def install_command(args):
         logger,
     )
     archives = []
+    # A launcher timeout or CFW shutdown delivers SIGTERM, which would kill
+    # this process without running the finally block — orphaning the
+    # fullscreen setup UI. Convert termination signals into a normal
+    # exception so the UI teardown and workspace lock release always run.
+    def _terminate(signum, frame):
+        raise NXError("terminated by signal %d" % signum)
+
+    for _signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        try:
+            signal.signal(_signum, _terminate)
+        except (OSError, ValueError):
+            pass
     try:
         with WorkspaceLock(workspace):
             logger.log(
