@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.1.4
+
+- Character creation no longer crashes on non-reference Play Store builds.
+  The player-name hooks still called the reference build's fixed offset for
+  `Main.get_PendingPlayer`; on any other build that jumps into the middle of
+  an unrelated function (reproduced on device with Play build 301544:
+  SIGSEGV the moment a new character is confirmed — the first thing a fresh
+  install does after the menus, which is exactly where 1.1.3's validation
+  stopped). The getter is now resolved by name through the IL2CPP metadata,
+  keeping the fixed offset only as a reference-build fallback.
+- Real `sincos`/`sincosf`. The generated import stubs returned without
+  writing their output pointers, feeding stack garbage to every native
+  rotation Unity computes from them (trail, particle and sprite
+  transforms). Unity logged `IsNan NaN,NaN` and on some GPU stacks
+  heavy-effect weapons corrupted the whole screen (reported with the Zenith
+  on a Mali-G52 handheld). Both now route to the C library's real
+  implementations; weapon swing and trail animation also compute correctly.
+- The controller bridge no longer falls back to fixed offsets from an old
+  1.4.4.9 dump when name resolution transiently fails; it retries on the
+  next frame instead of patching arbitrary engine code.
+- The "unknown build" log line no longer spills raw manifest JSON after the
+  build id.
+
 ## 1.1.3
 
 - Boot every accepted Play Store build, not just the reference binary. The
