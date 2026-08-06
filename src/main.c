@@ -102,9 +102,11 @@ static int ter_known_build(void) {
   blob[got] = 0;
   if (strstr(blob, "\"known_build\": false")) {
     const char *id = strstr(blob, "\"build_id\": \"");
-    fprintf(stderr, "[BUILD] build desconhecido%s%.32s -- hooks por RVA fixo desativados; "
+    int idlen = 0;
+    if (id) { id += 13; const char *q = strchr(id, '"'); idlen = q ? (int)(q - id) : 32; if (idlen > 32) idlen = 32; }
+    fprintf(stderr, "[BUILD] build desconhecido%s%.*s -- hooks por RVA fixo desativados; "
             "apenas patches com assinatura verificada\n",
-            id ? ": " : "", id ? id + 13 : "");
+            id ? ": " : "", idlen, id ? id : "");
   } else {
     cached = 1;
     fprintf(stderr, "[BUILD] build de referencia (14564): patches completos habilitados\n");
@@ -2765,11 +2767,18 @@ static void ter_force_main_player_name(const char *text) {
   void *s = isn(text);
   int hits = 0;
   /* GUIPlayerCreateMenu.CreateAndSave serializes Main.PendingPlayer directly.
-     It is not necessarily present in clientPlayer/player[] during creation. */
-  void *(*get_pending_player)(void *) =
-      (void *(*)(void *))(g_il2cpp_base + 0xF77378);
-  void *pending = get_pending_player(NULL);
-  if (pending) { ter_force_player_obj_name(pending, s); hits++; }
+     It is not necessarily present in clientPlayer/player[] during creation.
+     Resolvido POR NOME (multi-build); RVA 0xF77378 so no build de referencia.
+     Chamar o RVA cru num build desconhecido caia em opcode arbitrario ->
+     SIGSEGV na criacao de personagem (crash confirmado no 301544). */
+  unsigned long ppo = ter_method_off("Terraria", "Main", "get_PendingPlayer", 0);
+  if (!ppo && ter_known_build()) ppo = 0xF77378;
+  if (ppo) {
+    void *(*get_pending_player)(void *) =
+        (void *(*)(void *))(g_il2cpp_base + ppo);
+    void *pending = get_pending_player(NULL);
+    if (pending) { ter_force_player_obj_name(pending, s); hits++; }
+  }
   void *client = ter_static_obj("Terraria", "Main", "clientPlayer");
   if (client) { ter_force_player_obj_name(client, s); hits++; }
   void *arr = ter_static_obj("Terraria", "Main", "player");

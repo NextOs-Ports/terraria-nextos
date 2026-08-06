@@ -356,9 +356,12 @@ static int np_body_replace(unsigned long off, void *fn) {
 }
 static unsigned long np_off_or(const char *ns, const char *cn, const char *mn, int argc,
                                unsigned long fallback) {
-  unsigned long o = ter_method_off(ns, cn, mn, argc);
-  if (!o) o = fallback;
-  return o;
+  /* fallback era RVA de um dump 1.4.4.9.x — em QUALQUER build atual (ate o de
+     referencia) apontava pra codigo arbitrario e o np_body_replace escrevia um
+     trampolim la, corrompendo o il2cpp se a resolucao por nome falhasse um
+     frame. Sem fallback, o guard "tenta no proximo frame" volta a funcionar. */
+  (void)fallback;
+  return ter_method_off(ns, cn, mn, argc);
 }
 static int np_installed;
 static void np_install(void) {
