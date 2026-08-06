@@ -773,6 +773,11 @@ static void on_crash(int sig, siginfo_t *si, void *uc_) {
 
 /* ---------- overrides bionic->glibc (do re4) ---------- */
 /* sysconf: Unity lê _SC_* com constantes BIONIC (≠ glibc) → page/nproc/phys errados. */
+/* sincos/sincosf reais (o stub gerado não escrevia as saídas — NaN nas rotações) */
+extern void sincos(double, double *, double *);
+extern void sincosf(float, float *, float *);
+static void my_sincos(double x, double *s, double *c) { sincos(x, s, c); }
+static void my_sincosf(float x, float *s, float *c) { sincosf(x, s, c); }
 static long my_sysconf(int name) {
   switch (name) {
     case 0x27: return getpagesize();                 /* _SC_PAGESIZE */
@@ -4717,6 +4722,12 @@ int main(int argc, char **argv) {
   set_import("strlcpy", (void *)my_strlcpy);
   set_import("strlcat", (void *)my_strlcat);
   set_import("memalign", (void *)my_memalign);
+  /* 🔑 sincos/sincosf: caiam no stub genérico que NÃO escreve *sin/*cos ->
+     lixo de stack em toda rotação nativa da Unity (trilha/partícula/sprite):
+     "IsNan NaN,NaN" + tela glitchada com Zenith/armas de efeito pesado.
+     glibc tem os dois (GNU ext) — entrega os reais. */
+  set_import("sincos", (void *)my_sincos);
+  set_import("sincosf", (void *)my_sincosf);
   set_import("syscall", (void *)my_syscall);
   set_import("pthread_kill", (void *)my_pthread_kill);
   set_import("__memmove_chk", (void *)my_memmove_chk);
